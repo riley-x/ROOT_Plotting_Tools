@@ -1,4 +1,3 @@
-
 # Riley's declarative ROOT plotting toolkit
 
 Instead of manually adjusting each histogram,
@@ -136,14 +135,14 @@ list of TObjects.
     An empty string omits that entry.
     Default: []
 * `legend_order`
-    Reorders and trims the legend. Input a list of indexes into the list in [legend], so
+    Reorders and trims the legend. Input a list of indexes into the list in `legend`, so
     for example [3, 0, 1] will place the 4th entry first and omit the 3rd.
 * `legend_opts`
     A list matching the legend labels that changes how the symbol is drawn. Can be any
     mix of the letters 'PEFL' for point, error bars, fill, line.
 * `legend_custom`
     Input a list of (TObject, label, legend_opt) tuples to create the legend instead of
-    using the input TObjects. This nullifies the above options.
+    using the input TObjects. This overrides the above options.
 
 
 ## Utility Functions
