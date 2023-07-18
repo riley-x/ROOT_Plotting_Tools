@@ -362,6 +362,9 @@ def _auto_yrange(objs, at_least_zero=False, yrange=(None,None), logy=None, ydata
     '''
     if yrange[0] is None or yrange[1] is None:
         min_val, min_pos, max_val = _get_minmax_all(objs, **kwargs)
+        min_val = min_val if yrange[0] is None else yrange[0]
+        max_val = max_val if yrange[1] is None else yrange[1]
+
         if logy:
             min_val = min_pos
             min_val = np.log10(min_pos)
@@ -371,15 +374,15 @@ def _auto_yrange(objs, at_least_zero=False, yrange=(None,None), logy=None, ydata
 
         data_height = 1.0 - ydatapad_bot - ydatapad_top
         diff = (max_val - min_val)
-        y_min = min_val - diff * ydatapad_bot / data_height
-        y_max = max_val + diff * ydatapad_top / data_height
+        min_val = min_val - diff * ydatapad_bot / data_height if yrange[0] is None else yrange[0]
+        max_val = max_val + diff * ydatapad_top / data_height if yrange[1] is None else yrange[1]
         if at_least_zero:
-            y_min = max(y_min, 0)
+            min_val = max(min_val, 0)
 
         if logy:
-            newrange = (np.power(10, y_min) if yrange[0] is None else yrange[0], np.power(10, y_max) if yrange[1] is None else yrange[1])
+            newrange = (np.power(10, min_val), np.power(10, max_val))
         else:
-            newrange = (y_min if yrange[0] is None else yrange[0], y_max if yrange[1] is None else yrange[1])
+            newrange = (min_val, max_val)
 
             ### Fix unoptimized ticks when ydivs is small ###
             if ydivs := kwargs.get('ydivs'):
