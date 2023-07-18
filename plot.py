@@ -173,6 +173,10 @@ save_canvas_transparent
     variable [plot.save_transparent] to True to enable in the plot functions above.
 format
     Automatically formats a list of TObjects. 
+normalize
+    Normalizes a histogram in multiple ways.
+rebin2d
+    Rebins a 2D histogram with variable bins on each axis.
 '''
 
 import ROOT
@@ -180,7 +184,6 @@ import itertools
 import math
 import ctypes
 import numpy as np
-
 
 ROOT.gROOT.SetBatch(ROOT.kTRUE)
 ROOT.gROOT.SetStyle("ATLAS")
@@ -207,23 +210,42 @@ def _arg(val, i):
         return val
 
 
-def _auto_xrange(objs, xrange=(None,None), **kwargs):
-    if xrange[0] is None or xrange[1] is None:
-        x_min = None
-        x_max = None
-        for obj in objs:
-            if 'TH1' not in obj.ClassName():
-                continue
-            o_min = None
-            o_max = None
+def _auto_xrange(objs, xrange=(None,None), xdatapad=None, xdatapad_left=0, xdatapad_right=0, **kwargs):
+    def min_max(obj):
+        o_min = None
+        o_max = None
+        if 'TH1' in obj.ClassName() or 'TProfile' in obj.ClassName():
             for x in range(1, obj.GetNbinsX() + 1):
                 if obj.GetBinContent(x) != 0 or obj.GetBinError(x) != 0:
                     if o_min is None: o_min = obj.GetBinLowEdge(x)
                     o_max = obj.GetBinLowEdge(x + 1)
+            return o_min, o_max
+        elif 'TGraph' in obj.ClassName():
+            for i in range(obj.GetN()):
+                x = obj.GetPointX(i)
+                if o_min is None or x < o_min: o_min = x
+                if o_max is None or x > o_max: o_max = x
+            return o_min, o_max
+        else: 
+            raise RuntimeError('_get_minmax() unknown class ' + obj.ClassName())
+    
+    if xrange is None:
+        return None
+    elif xrange[0] is None or xrange[1] is None:
+        x_min = None
+        x_max = None
+        for obj in objs:
+            o_min, o_max = min_max(obj)
             if o_min is None or o_max is None: continue
             x_min = o_min if x_min is None else min(x_min, o_min)
             x_max = o_max if x_max is None else max(x_max, o_max)
 
+        diff = x_max - x_min
+        if xdatapad is not None:
+            xdatapad_left = xdatapad
+            xdatapad_right = xdatapad
+        x_min -= xdatapad_left * diff
+        x_max += xdatapad_right * diff
         newrange = (x_min if xrange[0] is None else xrange[0], x_max if xrange[1] is None else xrange[1])
         if isinstance(xrange, list):
             xrange[0] = newrange[0]
@@ -236,7 +258,7 @@ def _auto_xrange(objs, xrange=(None,None), **kwargs):
     return newrange
 
 
-def _get_minmax(obj, xrange = None, ignore_outliers_y=0, **kwargs):
+def _get_minmax(obj, xrange=None, ignore_outliers_y=0, **kwargs):
     '''
     Returns (min, min>0, max) of [obj]
 
@@ -262,7 +284,8 @@ def _get_minmax(obj, xrange = None, ignore_outliers_y=0, **kwargs):
         for i in range(n):
             x,y,e = get(i)
             if xrange:
-                if x < xrange[0] or x > xrange[1]: continue
+                if not xrange[0] is None and x < xrange[0]: continue
+                if not xrange[1] is None and x > xrange[1]: continue
             if e == 0: continue
             w_sum += 1/e
             mean_old = mean
@@ -281,7 +304,8 @@ def _get_minmax(obj, xrange = None, ignore_outliers_y=0, **kwargs):
         if y == math.inf:
             raise RuntimeError(f"_get_minmax() encountered math.inf at bin {i} of {obj.GetName()}")
         if xrange:
-            if x < xrange[0] or x > xrange[1]: continue
+            if not xrange[0] is None and x < xrange[0]: continue
+            if not xrange[1] is None and x > xrange[1]: continue
         if ignore_outliers_y:
             if e != 0 and abs(y - mean) > ignore_outliers_y * std: continue
 
@@ -292,7 +316,34 @@ def _get_minmax(obj, xrange = None, ignore_outliers_y=0, **kwargs):
     return (o_min, o_pos, o_max)
 
 
-def _auto_yrange(objs, start_at_zero=False, at_least_zero=False, yrange=(None,None), logy=None, ydatapad_bot=0.1, ydatapad_top=0.1, **kwargs):
+def _get_minmax_all(objs, **kwargs):
+    min_val = None
+    min_pos = None
+    max_val = None
+    for obj in objs:
+        if 'TF' in obj.ClassName(): continue
+        min_obj, min_pos_obj, max_obj = _get_minmax(obj, **kwargs)
+        if min_obj is None or max_obj is None: continue
+        if min_val is None or min_obj < min_val: 
+            min_val = min_obj
+        if min_pos is None or min_pos_obj < min_pos: 
+            min_pos = min_pos_obj
+        if max_val is None or max_obj > max_val:
+            max_val = max_obj
+    if min_val is None:
+        print(f"WARNING! _get_minmax_all() min_val is None, setting to 0")
+        min_val = 0
+    if min_pos is None:
+        print(f"WARNING! _get_minmax_all() min_pos is None, setting to 0")
+        min_pos = 0
+    if max_val is None:
+        print(f"WARNING! _get_minmax_all() max_val is None, setting to 0")
+        max_val = 0
+    
+    return min_val, min_pos, max_val
+
+
+def _auto_yrange(objs, at_least_zero=False, yrange=(None,None), logy=None, ydatapad_bot=0.1, ydatapad_top=0.1, **kwargs):
     '''
     Calculates automatic y-axis limits to fit the current content, with padding.
 
@@ -310,41 +361,20 @@ def _auto_yrange(objs, start_at_zero=False, at_least_zero=False, yrange=(None,No
         axis height. The sum of these two parameters should be in [0, 1].
     '''
     if yrange[0] is None or yrange[1] is None:
-        min_val = None
-        max_val = None
-        for obj in objs:
-            if 'TF' in obj.ClassName(): continue
-            min_obj,min_pos,max_obj = _get_minmax(obj, **kwargs)
-            if not min_obj or not max_obj:
-                continue
-            if logy and min_pos:
-                if not min_val or min_pos < min_val: 
-                    min_val = min_pos
-            elif min_val is None or min_obj < min_val:
-                min_val = min_obj
-            if max_val is None or max_obj > max_val:
-                max_val = max_obj
-        if min_val is None:
-            print(f"WARNING! _auto_yrange() min_val is None, setting to 0. max_val =", max_val)
-            min_val = 0
-        if max_val is None:
-            print(f"WARNING! _auto_yrange() max_val is None, setting to 0. min_val =", min_val)
-            max_val = 0
-
+        min_val, min_pos, max_val = _get_minmax_all(objs, **kwargs)
         if logy:
-            min_val = np.log10(min_val)
+            min_val = min_pos
+            min_val = np.log10(min_pos)
             max_val = np.log10(max_val)
         elif min_val >= 0:
-            at_least_zero = True # If !start_at_zero but everything is positive, make sure that the y_min is at least 0
+            at_least_zero = True # If everything is positive, make sure that the y_min is at least 0
 
         data_height = 1.0 - ydatapad_bot - ydatapad_top
-        if start_at_zero and not logy and min_val >= 0:
-            y_min = 0
-            y_max = max_val / data_height
-        else:
-            diff = (max_val - min_val)
-            y_min = min_val - diff * ydatapad_bot / data_height
-            y_max = max_val + diff * ydatapad_top / data_height
+        diff = (max_val - min_val)
+        y_min = min_val - diff * ydatapad_bot / data_height
+        y_max = max_val + diff * ydatapad_top / data_height
+        if at_least_zero:
+            y_min = max(y_min, 0)
 
         if logy:
             newrange = (np.power(10, y_min) if yrange[0] is None else yrange[0], np.power(10, y_max) if yrange[1] is None else yrange[1])
@@ -370,9 +400,7 @@ def _auto_yrange(objs, start_at_zero=False, at_least_zero=False, yrange=(None,No
                         else:
                             diff = newrange[1] - newrange[0]
                             newrange = (newrange[0] - diff * 0.1, newrange[1] + diff * 0.1)
-            
-        if at_least_zero:
-            newrange = (max(newrange[0], 0), newrange[1])
+        
         if isinstance(yrange, list):
             yrange[0] = newrange[0]
             yrange[1] = newrange[1]
@@ -380,6 +408,30 @@ def _auto_yrange(objs, start_at_zero=False, at_least_zero=False, yrange=(None,No
         newrange = yrange
 
     return newrange
+
+
+def _auto_zrange(objs, zrange=(None,None)):
+    if zrange[0] is None or zrange[1] is None:
+        min_val = None
+        max_val = None
+        for obj in objs:
+            if 'TH2' in obj.ClassName():
+                for y in range(1, obj.GetNbinsY() + 1):
+                    for x in range(1, obj.GetNbinsX() + 1):
+                        v = obj.GetBinContent(x, y)
+                        if v == 0: continue
+                        if min_val is None or v < min_val: min_val = v
+                        if max_val is None or v > max_val: max_val = v
+        if zrange[0] is not None or min_val is None: min_val = zrange[0]
+        if zrange[1] is not None or max_val is None: max_val = zrange[1]
+        new_range = (min_val, max_val)
+
+        if isinstance(zrange, list):
+            zrange[0] = new_range[0]
+            zrange[1] = new_range[1]
+    else:
+        new_range = zrange
+    return new_range
 
 
 def _max_width(leg_items, text_size):
@@ -402,12 +454,51 @@ def get_text_size(text, text_size):
     return tex.GetXsize(), tex.GetYsize()
 
 
+def _apply_common_opts(obj, i, **kwargs):
+    if 'linecolor' in kwargs:
+        obj.SetLineColor(_arg(kwargs['linecolor'], i))
+    if 'linestyle' in kwargs:
+        obj.SetLineStyle(_arg(kwargs['linestyle'], i))
+    if 'linewidth' in kwargs:
+        obj.SetLineWidth(_arg(kwargs['linewidth'], i))
+
+    if 'markerstyle' in kwargs:
+        obj.SetMarkerStyle(_arg(kwargs['markerstyle'], i))
+    if 'markercolor' in kwargs:
+        obj.SetMarkerColor(_arg(kwargs['markercolor'], i))
+    if 'markersize' in kwargs:
+        obj.SetMarkerSize(_arg(kwargs['markersize'], i))
+
+    if 'fillcolor' in kwargs:
+        obj.SetFillColor(_arg(kwargs['fillcolor'], i))
+    if 'fillstyle' in kwargs:
+        obj.SetFillStyle(_arg(kwargs['fillstyle'], i))
+
+    if i == 0:
+        if 'xtitle' in kwargs:
+            obj.GetXaxis().SetTitle(kwargs['xtitle'])
+        if 'ytitle' in kwargs:
+            obj.GetYaxis().SetTitle(kwargs['ytitle'])
+        if 'ztitle' in kwargs:
+            obj.GetZaxis().SetTitle(kwargs['ztitle'])
+
+        if x := kwargs.get('ztitleoffset'):
+            obj.GetZaxis().SetTitleOffset(x)
+
+        if 'xdivs' in kwargs:
+            obj.GetXaxis().SetNdivisions(kwargs['xdivs'], True)
+        if 'ydivs' in kwargs:
+            obj.GetYaxis().SetNdivisions(kwargs['ydivs'], True)
+        if x := kwargs.get('zdivs'):
+            obj.GetZaxis().SetNdivisions(x, True)
+
+
 def _plot(c, objs, opts="",
     textpos='topleft', titlesize=0.05, titlespacing=1, title='Internal', subtitle=None,
     legend=[], legend_order=None, legend_split=1, legend_width=0.2, legend_opts=None, legend_custom=None,
     rightmargin=None,
     logx=None, logy=None, logz=None, stack=False,
-    canvas_callback=None,
+    canvas_callback=None, axis_callback=None,
     **kwargs):
     '''
     Main plotting helper function. Plots [objs] on [c], and also a title and legend.
@@ -424,7 +515,9 @@ def _plot(c, objs, opts="",
     if logy is not None: c.SetLogy(logy)
     if logz is not None: c.SetLogz(logz)
     if rightmargin is None:
-        if 'COLZ' in opts:
+        if 'ztitle' in kwargs:
+            rightmargin = 0.2
+        elif 'Z' in _arg(opts, 0):
             rightmargin = 0.13
         else:
             rightmargin = 0.05
@@ -452,34 +545,7 @@ def _plot(c, objs, opts="",
 
     ### Process histograms
     for i in range(len(objs)):
-        if 'linecolor' in kwargs:
-            objs[i].SetLineColor(_arg(kwargs['linecolor'], i))
-        if 'linestyle' in kwargs:
-            objs[i].SetLineStyle(_arg(kwargs['linestyle'], i))
-        if 'linewidth' in kwargs:
-            objs[i].SetLineWidth(_arg(kwargs['linewidth'], i))
-
-        if 'markerstyle' in kwargs:
-            objs[i].SetMarkerStyle(_arg(kwargs['markerstyle'], i))
-        if 'markercolor' in kwargs:
-            objs[i].SetMarkerColor(_arg(kwargs['markercolor'], i))
-        if 'markersize' in kwargs:
-            objs[i].SetMarkerSize(_arg(kwargs['markersize'], i))
-
-        if 'fillcolor' in kwargs:
-            objs[i].SetFillColor(_arg(kwargs['fillcolor'], i))
-        if 'fillstyle' in kwargs:
-            objs[i].SetFillStyle(_arg(kwargs['fillstyle'], i))
-
-        if 'xtitle' in kwargs:
-            objs[i].GetXaxis().SetTitle(kwargs['xtitle'])
-        if 'ytitle' in kwargs:
-            objs[i].GetYaxis().SetTitle(kwargs['ytitle'])
-
-        if 'xdivs' in kwargs:
-            objs[i].GetXaxis().SetNdivisions(kwargs['xdivs'], True)
-        if 'ydivs' in kwargs:
-            objs[i].GetYaxis().SetNdivisions(kwargs['ydivs'], True)
+        _apply_common_opts(objs[i], i, **kwargs)
 
         if do_legend:
             label = legend[i] if legend else objs[i].GetName()
@@ -545,12 +611,18 @@ def _plot(c, objs, opts="",
     if kwargs.get('xrange') is not None: # No autorange by default
         xrange = _auto_xrange(objs, **kwargs)
         if xrange is not None: 
-            objs[0].GetXaxis().SetRangeUser(*xrange)
+            if 'TGraph' in objs[0].ClassName():
+                objs[0].GetXaxis().SetLimits(*xrange)
+            else:
+                objs[0].GetXaxis().SetRangeUser(*xrange)
             kwargs['xrange'] = xrange
     if kwargs.get('yrange', True) is not None: # default value not used here, just needs to not be None to auto range by default
-        kwargs.setdefault('start_at_zero', 'HIST' in _arg(opts, 0))
-        yrange = _auto_yrange(objs, logy=logy, **kwargs)
-        objs[0].GetYaxis().SetRangeUser(*yrange)
+        if 'TH2' not in objs[0].ClassName():
+            yrange = _auto_yrange(objs, logy=logy, **kwargs)
+            objs[0].GetYaxis().SetRangeUser(*yrange)
+    if zrange := kwargs.get('zrange'):
+        zrange = _auto_zrange(objs, zrange=zrange)
+        objs[0].GetZaxis().SetRangeUser(*zrange)
 
     ### TEXT AND LEGEND ###
     if subtitle is not None:
@@ -716,39 +788,48 @@ def _plot(c, objs, opts="",
         cache.append(leg)
 
     if canvas_callback: cache.append(canvas_callback(c))
+    if axis_callback: cache.append(axis_callback(objs[0]))
 
     return cache
 
 
-def _outliers(hists, yrange=None):
+def _outliers(hists):
+    '''
+    Draws outlier arrows for points that aren't in the yrange of the graph. hists[0]
+    should be the axis histogram.
+    '''
+    y_min = hists[0].GetMinimum() # user coordinates
+    y_max = hists[0].GetMaximum()
+    y_pad = (y_max - y_min) / 50
+
+    x_min = hists[0].GetXaxis().GetFirst() # bins
+    x_max = hists[0].GetXaxis().GetLast()
+
     markers = []
-    ydiff = (yrange[1] - yrange[0]) / 20.
     for h in hists:
-        for i in range(1, h.GetNbinsX()+1): # TH1 bins are 1-indexed
+        for i in range(x_min, x_max + 1):
             v = h.GetBinContent(i)
-            #e = h.GetBinError(i)
-            if v == 0:
-                continue
-            elif v >= yrange[1]:
-                m = ROOT.TMarker(h.GetXaxis().GetBinCenter(i), yrange[1] - ydiff, ROOT.kFullTriangleUp)
-                m.SetMarkerColor(ROOT.kBlue)
-                m.Draw()
-                markers.append(m)
-            elif v < yrange[0]:
-                m = ROOT.TMarker(h.GetXaxis().GetBinCenter(i), yrange[0] + ydiff, ROOT.kFullTriangleDown)
-                m.SetMarkerColor(ROOT.kBlue)
-                m.Draw()
-                markers.append(m)
+            if v == 0: continue
+            elif y_max is not None and v >= y_max:
+                m = ROOT.TMarker(h.GetXaxis().GetBinCenter(i), y_max - y_pad, ROOT.kFullTriangleUp)
+            elif y_min is not None and v < y_min:
+                m = ROOT.TMarker(h.GetXaxis().GetBinCenter(i), y_min + y_pad, ROOT.kFullTriangleDown)
+            else: continue
+            
+            m.SetMarkerColor(h.GetLineColor())
+            m.Draw()
+            markers.append(m)
 
     return markers
+
 
 ##############################################################################
 ###                            CANVAS WRAPPERS                             ###
 ##############################################################################
 
 
-def plot(objs, canvas_size=(1000,800), **kwargs):
-    c = ROOT.TCanvas('c1', 'c1', *canvas_size)
+def plot(objs, canvas_size=(1000,800), canvas_name='c1', **kwargs):
+    c = ROOT.TCanvas(canvas_name, canvas_name, *canvas_size)
     cache = _plot(c, objs, **kwargs)
     c.RedrawAxis() # Make the tick marks go above any fill
     save_canvas(c, kwargs.get('filename', objs[0].GetName()))
@@ -767,7 +848,53 @@ def _copy_ratio_args(args, postfix):
     return out
 
 
-def plot_ratio(hists1, hists2, height1=0.7, outlier_arrows=False, hline=None, save_plot=True, **kwargs):
+def _fix_axis_sizing(h, pad, remove_x_labels=False):
+    '''
+    Fixes various axes sizing issues when you have multiple pads, since ROOT sizes 
+    things based on the pad size not the canvas size.
+    '''
+    old_size = 0.05    
+    old_offset_x = 1.4 
+    old_offset_y = 1.4 
+    tick_length_x = 0.03
+    tick_length_y = 0.03
+
+    height = pad.GetHNDC()
+
+    if remove_x_labels:
+        h.GetXaxis().SetLabelOffset(999)
+        h.GetXaxis().SetLabelSize(0)
+        h.GetXaxis().SetTitleSize(0)
+    else:
+        h.GetXaxis().SetLabelSize(old_size / height)
+        h.GetXaxis().SetTitleSize(old_size / height)
+        h.GetXaxis().SetTitleOffset(1)
+
+    h.GetYaxis().SetLabelSize(old_size / height)
+    h.GetYaxis().SetTitleSize(old_size / height)
+    h.GetYaxis().SetTitleOffset(old_offset_y * height)
+
+    h.GetXaxis().SetTickLength(tick_length_x / (1 - pad.GetTopMargin() - pad.GetBottomMargin())) 
+    h.GetYaxis().SetTickLength(tick_length_y / (1 - pad.GetTopMargin() - pad.GetBottomMargin())) 
+    # See https://root-forum.cern.ch/t/inconsistent-tick-length/18563/9
+    # The tick scale is affected by the margins: tick_length = pixel_size / ((pad2H - marginB - marginT) / pad2H * pad2W)
+    # Note there seems to be a minimum tick length for the y axis...
+
+
+def _draw_horizontal_line(pos, h, xrange):
+    # TODO this will still draw the line out of the axes if pos is not in yrange
+    if pos is not None:
+        if xrange:
+            # make sure xrange is a list if it has None elements
+            line = ROOT.TLine(xrange[0], pos, xrange[1], pos)
+        else:
+            line = ROOT.TLine(h.GetXaxis().GetXmin(), pos, h.GetXaxis().GetXmax(), pos)
+        line.SetLineStyle(ROOT.kDashed)
+        line.Draw()
+        return line
+
+
+def plot_ratio(hists1, hists2, height1=0.7, outlier_arrows=True, hline=None, axes_callback=None, save_plot=True, **kwargs):
     '''
     Plots [hists1] in a main pad on top and [hists2] in a secondary pad below. The two 
     sets of objects should share the same x axis. Set options in the secondary pad by 
@@ -776,6 +903,9 @@ def plot_ratio(hists1, hists2, height1=0.7, outlier_arrows=False, hline=None, sa
     @param hline
         Draws a horizontal line in the secondary pad. The value sets the y position in
         user coordinates. Set to None to omit.
+    @param outlier_arrows
+        Draws small triangles at the top/bottom of the ratio pad to indicate points that
+        are outside of the plot range.
     '''
     c = ROOT.TCanvas("c1", "c1", 1000, 800)
     c.SetFillColor(colors.transparent_white)
@@ -801,74 +931,32 @@ def plot_ratio(hists1, hists2, height1=0.7, outlier_arrows=False, hline=None, sa
     cache = _plot(pad1, hists1, **kwargs)
     pad1.RedrawAxis() # Make the tick marks go above any fill
 
-    ### Draw ratio plot
-    args2 = { 'ydivs': 504, 'ignore_outliers_y': 2, 'title': None, 'legend': None }
+    ### Draw ratio plot ###
+    args2 = { 'ydivs': 504, 'ignore_outliers_y': 4, 'title': None, 'legend': None }
     args2.update(_copy_ratio_args(kwargs, '2'))
     cache.append(_plot(pad2, hists2, do_legend=False, **args2))
     pad2.RedrawAxis() # Make the tick marks go above any fill
 
-    ### Draw y=1 line
-    if hline is not None:
-        if xrange := kwargs.get('xrange'):
-            l = ROOT.TLine(xrange[0], hline, xrange[1], hline)
-        else:
-            l = ROOT.TLine(hists2[0].GetXaxis().GetXmin(), hline, hists2[0].GetXaxis().GetXmax(), hline)
-        l.SetLineStyle(ROOT.kDashed)
-        l.Draw()
-        cache.append(l)
+    ### Draw y=1 line ###
+    cache.append(_draw_horizontal_line(hline, hists2[0], kwargs.get('xrange')))
+    
+    ### Fix axes sizing ### 
+    _fix_axis_sizing(hists1[0], pad1, True)
+    _fix_axis_sizing(hists2[0], pad2)
+    
+    ### Draw out-of-bounds arrows ###
+    if outlier_arrows: cache.append(_outliers(hists2))
 
-    ### Remove x-axis labels from top plot
-    hists1[0].GetXaxis().SetLabelOffset(999)
-    hists1[0].GetXaxis().SetLabelSize(0)
-    hists1[0].GetXaxis().SetTitleSize(0)
-
-    ### Fix text / tick sizes (ROOT shrinks text sizes based on pad size). These should be hard coded in case
-    ### the histogram is reused.
-    old_size = 0.05    # hists1[0].GetYaxis().GetTitleSize()
-    old_offset_x = 1.4 # hists1[0].GetXaxis().GetTitleOffset()
-    old_offset_y = 1.4 # hists1[0].GetYaxis().GetTitleOffset()
-
-    hists1[0].GetYaxis().SetLabelSize(old_size / height1)
-    hists1[0].GetYaxis().SetTitleSize(old_size / height1)
-    hists1[0].GetYaxis().SetTitleOffset(old_offset_y * height1)
-
-    hists2[0].GetXaxis().SetLabelSize(old_size / height2)
-    hists2[0].GetXaxis().SetTitleSize(old_size / height2)
-    hists2[0].GetXaxis().SetTitleOffset(1)
-    hists2[0].GetXaxis().SetTickLength(0.03 / height_ratio) # default is 0.03; this makes it equal to pad 1
-
-    hists2[0].GetYaxis().SetLabelSize(old_size / height2)
-    hists2[0].GetYaxis().SetTitleSize(old_size / height2)
-    hists2[0].GetYaxis().SetTitleOffset(old_offset_y * height2)
-    #hists2[0].GetYaxis().SetTickLength(0.03 * (0.97 * height1) / (height2 - 0.12)) # adjust for the bottom margins too ?
-
-    ### Draw out-of-bounds arrows
-    if outlier_arrows:
-        yrange = kwargs['yrange2']
-        ydiff = (yrange[1] - yrange[0]) / 20.
-        for i in range(1, hists2[0].GetNbinsX()+1): # TH1 bins are 1-indexed
-            v = hists2[0].GetBinContent(i)
-            e = hists2[0].GetBinError(i)
-            if v == 0:
-                continue
-            elif v >= yrange[1]:
-                m = ROOT.TMarker(hists2[0].GetXaxis().GetBinCenter(i), yrange[1] - ydiff, ROOT.kFullTriangleUp)
-                m.SetMarkerColor(ROOT.kBlue)
-                m.Draw()
-                cache.append(m)
-            elif v < yrange[0]:
-                m = ROOT.TMarker(hists2[0].GetXaxis().GetBinCenter(i), yrange[0] + ydiff, ROOT.kFullTriangleDown)
-                m.SetMarkerColor(ROOT.kBlue)
-                m.Draw()
-                cache.append(m)
-
+    ### Callback ###
+    if axes_callback:
+        axes_callback(hists1[0], hists2[0])
     if save_plot:
         save_canvas(c, kwargs.get('filename', hists1[0].GetName()))
     
     return c, cache
 
 
-def plot_ratio3(hists1, hists2, hists3, height1=0.55, outlier_arrows=False, hline2=None, hline3=None, **kwargs):
+def plot_ratio3(hists1, hists2, hists3, height1=0.55, outlier_arrows=True, hline2=None, hline3=None, axes_callback=None, save_plot=True, **kwargs):
     '''
     A ratio plot with two ancillary pads. Plots [hists1] in a main pad on top and 
     [hists2] and [hists3] in the middle and bottom ancillary pads respectively. The 
@@ -882,10 +970,9 @@ def plot_ratio3(hists1, hists2, hists3, height1=0.55, outlier_arrows=False, hlin
     c = ROOT.TCanvas("c1", "c1", 1000, 800)
     c.SetFillColor(colors.transparent_white)
 
-    ### Create pads
+    ### Create pads ###
     height2 = (1 - height1) / 2 - 0.06
     height3 = height2 + 0.12
-    tick_length_y = 0.03
 
     pad1 = ROOT.TPad("pad1", "pad1", 0, height2 + height3, 1, 1)
     pad1.SetFillColor(colors.transparent_white)
@@ -906,111 +993,50 @@ def plot_ratio3(hists1, hists2, hists3, height1=0.55, outlier_arrows=False, hlin
     pad3.SetBottomMargin(0.12 / height3)
     pad3.Draw()
 
-    ### Draw main histo
-    kwargs['titlesize'] = kwargs.get('titlesize', 0.05) / height1
-    kwargs['yrange'] = list(kwargs.get('yrange', [None, None]))
+    ### Draw main histo ###
+    titlesize = kwargs.get('titlesize', 0.05)
+    kwargs['titlesize'] = titlesize / height1
+    # kwargs['yrange'] = list(kwargs.get('yrange', [None, None]))
     kwargs.setdefault('text_offset_bottom', 0.1 * (1 - height1)) # guess
-    cache1 = _plot(pad1, hists1, **kwargs)
-    hists1[0].Draw('sameaxis') # Make the tick marks go above any fill
+    cache = _plot(pad1, hists1, **kwargs)
+    pad1.RedrawAxis() # Make the tick marks go above any fill
 
     ### Draw first ratio plot
-    args2 = { 'ydivs': 503, 'ignore_outliers_y': 3, 'title': None }
+    args2 = { 'ydivs': 503, 'ignore_outliers_y': 3, 'title': None, 'legend': None, 'titlesize': titlesize / height2 }
     args2.update(_copy_ratio_args(kwargs, '2'))
-    cache2 = _plot(pad2, hists2, do_legend=False, **args2)
-    hists2[0].Draw('sameaxis') # Make the tick marks go above any fill
+    cache.append(_plot(pad2, hists2, do_legend=False, **args2))
+    pad2.RedrawAxis() # Make the tick marks go above any fill
 
-    ### Draw y=1 line
-    if hline2 is not None:
-        if xrange := kwargs.get('xrange'):
-            l2 = ROOT.TLine(xrange[0], hline2, xrange[1], hline2) # make sure xrange is a list if it has None elements
-        else:
-            l2 = ROOT.TLine(hists2[0].GetXaxis().GetXmin(), hline2, hists2[0].GetXaxis().GetXmax(), hline2)
-        l2.SetLineStyle(ROOT.kDashed)
-        l2.Draw()
+    ### Draw y=1 line ###
+    cache.append(_draw_horizontal_line(hline2, hists2[0], kwargs.get('xrange')))
+
+    ### Draw out-of-bounds arrows ###
+    if outlier_arrows: cache.append(_outliers(hists2))
 
     ### Draw second ratio plot
-    args3 = { 'ydivs': 503, 'ignore_outliers_y': 3, 'title': None }
+    args3 = { 'ydivs': 503, 'ignore_outliers_y': 3, 'title': None, 'legend': None, 'titlesize': titlesize / height3, 'text_offset_bottom': 0.15 / height3 }
     args3.update(_copy_ratio_args(kwargs, '3'))
-    cache3 = _plot(pad3, hists3, do_legend=False, **args3)
-    hists3[0].Draw('sameaxis') # Make the tick marks go above any fill
+    cache.append(_plot(pad3, hists3, do_legend=False, **args3))
+    pad3.RedrawAxis() # Make the tick marks go above any fill
 
-    ### Draw y=1 line
-    if hline3 is not None:
-        if xrange := kwargs.get('xrange'):
-            l3 = ROOT.TLine(xrange[0], hline3, xrange[1], hline3)
-        else:
-            l3 = ROOT.TLine(hists2[0].GetXaxis().GetXmin(), hline3, hists2[0].GetXaxis().GetXmax(), hline3)
-        l3.SetLineStyle(ROOT.kDashed)
-        l3.Draw()
+    ### Draw y=1 line ###
+    cache.append(_draw_horizontal_line(hline3, hists3[0], kwargs.get('xrange')))
 
-    ### Remove x-axis labels from top plots
-    hists1[0].GetXaxis().SetLabelOffset(999)
-    hists1[0].GetXaxis().SetLabelSize(0)
-    hists1[0].GetXaxis().SetTitleSize(0)
+    ### Draw out-of-bounds arrows ###
+    if outlier_arrows: cache.append(_outliers(hists3))
 
-    hists2[0].GetXaxis().SetLabelOffset(999)
-    hists2[0].GetXaxis().SetLabelSize(0)
-    hists2[0].GetXaxis().SetTitleSize(0)
+    ### Fix axes sizing ### 
+    _fix_axis_sizing(hists1[0], pad1, True)
+    _fix_axis_sizing(hists2[0], pad2, True)
+    _fix_axis_sizing(hists3[0], pad3)
 
-    ### Remove y labels that might get cut off
-    if kwargs['yrange'][0] == 0:
-        hists1[0].GetYaxis().ChangeLabel(1, -1, 0) # remove the bottom tick label, since it usually gets cut off
+    ### Callback ###
+    if axes_callback:
+        axes_callback(hists1[0], hists2[0], hists3[0])
+    if save_plot:
+        save_canvas(c, kwargs.get('filename', hists1[0].GetName()))
 
-    ### Fix text / tick sizes (ROOT shrinks text sizes based on pad size),
-    old_size = hists1[0].GetYaxis().GetTitleSize()
-    old_offset_x = hists1[0].GetXaxis().GetTitleOffset()
-    old_offset_y = hists1[0].GetYaxis().GetTitleOffset()
-
-    hists1[0].GetYaxis().SetLabelSize(old_size / height1)
-    hists1[0].GetYaxis().SetTitleSize(old_size / height1)
-    hists1[0].GetYaxis().SetTitleOffset(old_offset_y * height1)
-    hists1[0].GetYaxis().SetTickLength(tick_length_y / (1 - pad1.GetTopMargin()))
-    # See https://root-forum.cern.ch/t/inconsistent-tick-length/18563/9
-    # The tick scale is affected by the margins: tick_length = pixel_size / ((pad2H - marginB - marginT) / pad2H * pad2W)
-    # Note there seems to be a minimum tick length
-
-    hists2[0].GetXaxis().SetLabelSize(old_size / height2)
-    hists2[0].GetXaxis().SetTitleSize(old_size / height2)
-    hists2[0].GetXaxis().SetTitleOffset(1)
-    hists2[0].GetXaxis().SetTickLength(0.03 * height1 / height2) # default is 0.03; this makes it equal to pad 1
-
-    hists2[0].GetYaxis().SetLabelSize(old_size / height2)
-    hists2[0].GetYaxis().SetTitleSize(old_size / height2)
-    hists2[0].GetYaxis().SetTitleOffset(old_offset_y * height2)
-    hists2[0].GetYaxis().SetTickLength(tick_length_y)
-
-    hists3[0].GetXaxis().SetLabelSize(old_size / height3)
-    hists3[0].GetXaxis().SetTitleSize(old_size / height3)
-    hists3[0].GetXaxis().SetTitleOffset(1)
-    hists3[0].GetXaxis().SetTickLength(0.03 * height1 / height3) # default is 0.03; this makes it equal to pad 1
-
-    hists3[0].GetYaxis().SetLabelSize(old_size / height3)
-    hists3[0].GetYaxis().SetTitleSize(old_size / height3)
-    hists3[0].GetYaxis().SetTitleOffset(old_offset_y * height3)
-    hists3[0].GetYaxis().SetTickLength(tick_length_y / (1 - pad3.GetBottomMargin()))
-
-    ### Draw out-of-bounds arrows
-    if outlier_arrows:
-        markers = []
-        yrange = kwargs['yrange2']
-        ydiff = (yrange[1] - yrange[0]) / 20.
-        for i in range(1, hists2[0].GetNbinsX()+1): # TH1 bins are 1-indexed
-            v = hists2[0].GetBinContent(i)
-            e = hists2[0].GetBinError(i)
-            if v == 0:
-                continue
-            elif v >= yrange[1]:
-                m = ROOT.TMarker(hists2[0].GetXaxis().GetBinCenter(i), yrange[1] - ydiff, ROOT.kFullTriangleUp)
-                m.SetMarkerColor(ROOT.kBlue)
-                m.Draw()
-                markers.append(m)
-            elif v < yrange[0]:
-                m = ROOT.TMarker(hists2[0].GetXaxis().GetBinCenter(i), yrange[0] + ydiff, ROOT.kFullTriangleDown)
-                m.SetMarkerColor(ROOT.kBlue)
-                m.Draw()
-                markers.append(m)
-
-    save_canvas(c, kwargs.get('filename', hists1[0].GetName()))
+    return c, cache
 
 
 def plot_two_scale(hists1, hists2, **kwargs):
@@ -1071,69 +1097,165 @@ def plot_two_scale(hists1, hists2, **kwargs):
     save_canvas(c, kwargs.get('filename', hists1[0].GetName()))
 
 
-def plot_tiered(hists, y_labels = None, ydatapad_top = 0.1, **kwargs):
+def _draw_tier_fill(h, y, i, fillcolor=None, **kwargs):
+    cache = []
+    color = _arg(fillcolor, y) if fillcolor else h.GetFillColor() # color each tier differently, instead of each series. Assume generally i == 1 in this function.
+    for x in range(1, h.GetNbinsX() + 1):
+        x1 = h.GetXaxis().GetBinLowEdge(x)
+        x2 = h.GetXaxis().GetBinLowEdge(x + 1)
+        height = h.GetBinContent(x)
+        if height <= 0: continue
+
+        box = ROOT.TBox(x1, y, x2, y + height)
+        box.SetFillColor(color)
+        box.SetLineColor(color)
+        box.Draw()
+        cache.append(box)
+    return cache
+
+
+def _draw_tier_line(h, y, i, linecolor=None, linewidth=None, xrange=None, **kwargs):
+    cache = []
+    color = _arg(linecolor, i) if linecolor else h.GetLineColor()
+    width = _arg(linewidth, i) if linewidth else h.GetLineWidth()
+    first = True
+    for x in range(1, h.GetNbinsX() + 1):
+        x1 = h.GetXaxis().GetBinLowEdge(x)
+        x2 = h.GetXaxis().GetBinLowEdge(x + 1)
+        y2 = y + h.GetBinContent(x)
+
+        if xrange:
+            if x1 < xrange[0]: continue
+            if x2 > xrange[1]: continue
+
+        lines = [ROOT.TLine(x1, y2, x2, y2)]
+        if first: 
+            first = False
+        else:
+            y_old = y + h.GetBinContent(x - 1)
+            lines.append(ROOT.TLine(x1, y_old, x1, y2))
+
+        for l in lines:
+            l.SetLineColor(color)
+            l.SetLineWidth(width)
+            l.Draw()
+        cache.append(lines)
+    return cache
+
+
+def plot_tiered(hists, y_labels=None, plot_style=None, ydatapad_top=0.1, **kwargs):
     '''
-    Similar to a violin plot, this plots each hist in its own equi-height y-bin.
+    Similar to a violin plot, this plots each histogram in its own equi-height y-bin.
     Negative values are supressed.
 
     @param hists
-        Each hist will get its own y-bin, in increasing (bottom to top) order.
+        A list of histograms with shape (#ybins, #series). The y-bins are listed from
+        bottom to top. The series histograms in each ybin are normalized to each other.
     @param y_labels
-        The label of each y-bin, in matching order as `hists`.
+        The label of each y-bin, in matching order as `hists.shape[0]`.
+    @param plot_style
+        How to draw the histograms. This can be
+            - "fill": Filled boxes from 0. Default option if #series == 1.
+            - "line": Similar to ROOT "hist" mode. Default option if #series > 1.
+            - "point": Similar to ROOT "PE" mode. Not implemented yet.
     '''
+    n_tiers = len(hists)
     c = ROOT.TCanvas('c1', 'c1', 1000, 800)
 
     ### Create the frame ###
-    axis = hists[0].GetXaxis()
+    axis = hists[0][0].GetXaxis()
     if axis.IsVariableBinSize():
-        h = ROOT.TH2F('tiers', '', hists[0].GetNbinsX(), axis.GetXbins().GetArray(), len(hists), 0, len(hists))
+        h_frame = ROOT.TH2F('tiers', '', axis.GetNbins(), axis.GetXbins().GetArray(), n_tiers, 0, n_tiers)
     else:
-        h = ROOT.TH2F('tiers', '', hists[0].GetNbinsX(), axis.GetXmin(), axis.GetXmax(), len(hists), 0, len(hists))
-    h.Draw('AXIS')
+        h_frame = ROOT.TH2F('tiers', '', axis.GetNbins(), axis.GetXmin(), axis.GetXmax(), n_tiers, 0, n_tiers)
+    h_frame.Draw('AXIS')
 
     ### Set bin labels ###
     if y_labels is not None:
         c.SetLeftMargin(kwargs.get('leftmargin', 0.2))
-        h.GetYaxis().SetTitleOffset(kwargs.get('ytitle_offset', 2))
+        h_frame.GetYaxis().SetTitleOffset(kwargs.get('ytitle_offset', 2))
         for y,label in enumerate(y_labels):
-            h.GetYaxis().SetBinLabel(y + 1, label)
+            h_frame.GetYaxis().SetBinLabel(y + 1, label)
 
-    ### Pop some opts before the call to _plot ###
-    fillcolor = kwargs.pop('fillcolor', None)
+    ### Handle some opts that are usually done in _plot ###
+    kwargs['xrange'] = _auto_xrange([x for s in hists for x in s], **kwargs)
+    yrange = kwargs.pop('yrange', None)
+    logy = kwargs.pop('logy', None)
+    kwargs.pop('opts', None)
 
-    ### Draw boxes ###
+    if 'legend' in kwargs and 'legend_custom' not in kwargs:
+        legend_custom = []
+        for i,obj in enumerate(hists[0]): 
+            _apply_common_opts(obj, i, **kwargs)
+            legend_custom.append([obj, kwargs['legend'][i], 'L'])
+        kwargs['legend_custom'] = legend_custom
+
+    ### Draw histograms ###
     cache = []
-    for y in range(len(hists)):
-        # Normalize the histogram to the maximum value. In user coordinates, defined
+    for y,series in enumerate(hists):
+        # Normalize the histograms to the maximum value. In user coordinates, defined
         # by the frame histogram above, the max height of each y bin is just 1.
-        if m := hists[y].GetMaximum():
-            hists[y].Scale((1 - ydatapad_top) / m)
+        _, min_pos, max_val = _get_minmax_all(series, **kwargs)
+        if not max_val: continue
 
-        for x in range(1, h.GetNbinsX() + 1):
-            height = hists[y].GetBinContent(x)
-            if height <= 0: continue
+        if logy:
+            if yrange and yrange[0] is not None:
+                min_pos = yrange[0]
+            max_val = np.log(max_val) - np.log(min_pos)
+            series = [log_hist(h, min_val=min_pos) for h in series]
 
-            bin_x = h.GetXaxis().GetBinLowEdge(x)
-            bin_width = h.GetXaxis().GetBinWidth(x)
-
-            box = ROOT.TBox(bin_x, y, bin_x + bin_width, y + height)
-            if fillcolor:
-                if callable(fillcolor):
-                    color = fillcolor(hists[y], x, y)
-                else:
-                    color = _arg(_arg(fillcolor, y), x)
-                box.SetFillColor(color)
-                box.SetLineColor(color)
-            else:
-                box.SetFillColor(hists[y].GetFillColor())
-                box.SetLineColor(hists[y].GetLineColor())
-            box.Draw()
-            cache.append(box)
+        for i,h in enumerate(series):
+            h.Scale((1 - ydatapad_top) / max_val)
+            if plot_style == 'fill' or plot_style is None and len(series) == 1:
+                cache.append(_draw_tier_fill(h, y, i, **kwargs))
+            elif plot_style == 'line' or plot_style is None and len(series) > 1:
+                cache.append(_draw_tier_line(h, y, i, **kwargs))
 
     ### Draw labels and text ###
-    cache.append(_plot(c, [h], opts='AXIS SAMES', yrange=None, **kwargs)) # Make the tick marks / titles go above the boxes
+    cache.append(_plot(c, [h_frame], opts='AXIS SAMES', **kwargs)) # Make the tick marks / titles go above the boxes
+    
+    if bin_title := kwargs.get('bin_title'):
+        c.SetTopMargin(0.06)
+        tex = ROOT.TLatex(0, 0.95, bin_title)
+        tex.SetTextFont(42)
+        tex.SetTextSize(0.035)
+        tex.SetNDC()
+        width = tex.GetXsize()
+        tex.SetX(max(0.05, c.GetLeftMargin() - width))
+        tex.Draw()
 
-    save_canvas(c, kwargs.get('filename', hists[0].GetName()))
+    save_canvas(c, kwargs.get('filename', hists[0][0].GetName()))
+
+
+def plot_2panel(hists1, hists2, **kwargs):
+    '''
+    Similar to [plot_ratio], but sets some default values to give the two pads the same 
+    height.
+    '''
+    def setdefault_both(key, val):
+        kwargs.setdefault(key, val)
+        kwargs.setdefault(key + '2', kwargs[key]) # use the value set by the user, if present
+    kwargs.setdefault('textpos', 'topsplit')
+    kwargs.setdefault('height1', 0.5)
+    setdefault_both('ydivs', 506)
+
+    plot_ratio(hists1, hists2, **kwargs)
+
+
+def plot_3panel(hists1, hists2, hists3, **kwargs):
+    '''
+    Similar to [plot_ratio3], but sets some default values to give the pads the same 
+    height.
+    '''
+    def setdefault_all(key, val):
+        kwargs.setdefault(key, val)
+        kwargs.setdefault(key + '2', kwargs[key]) # use the value set by the user, if present
+        kwargs.setdefault(key + '3', kwargs[key])
+    kwargs.setdefault('textpos', 'topsplit')
+    kwargs.setdefault('height1', 0.4)
+    setdefault_all('ydivs', 504)
+
+    plot_ratio3(hists1, hists2, hists3, **kwargs)
 
 
 ##############################################################################
@@ -1311,7 +1433,7 @@ def plot_colors():
             b.Draw()
             boxes.append(b)
 
-    c.Print('colormaps' + file_format)
+    c.Print('colormaps.png')
 
 
 ##############################################################################
@@ -1510,6 +1632,161 @@ def reduced_legend_hists(shape, opts=None):
             _apply_style(h, opts, dim, i, size, apply_color_to_fill=True)
             out.append(h)
     return out
+
+
+##############################################################################
+###                               UTILITIES                                ###
+##############################################################################
+
+
+def normalize(h, mode="integral"):
+    '''
+    Normalizes a histogram with multiple different modes. This function leaves the
+    original histogram untouched.
+
+    @param mode
+        - "integral": Divides [h] by its integral, including overflow bins
+        - "integral%": As above, but scales by 100.
+        - "abs integral": Divides [h] by the sum of its |bin contents|, including over-
+            flow bins.
+        - "cumulative": Sets the bin x to (# events <= x / # total events).
+        - "cumulativer": Sets the bin x to (# events >= x / # total events).
+    @return the normalized histogram.
+    '''
+    h = h.Clone()
+    if mode == True:
+        mode = 'integral'
+
+    if not mode:
+        pass
+    elif mode.startswith("integral"):
+        integral = h.Integral(0, -1)
+        if integral == 0:
+            print("plot.normalize() Warning! Integral is 0, doing nothing")
+        elif '%' in mode:
+            h.Scale(100 / integral)
+        else:
+            h.Scale(1 / integral)
+    elif mode == "abs integral":
+        tot = 0
+        for i in range(0, h.GetNbinsX()+2): # TH1 bins are 1-indexed
+            tot += abs(h.GetBinContent(i))
+        if tot == 0:
+            print("plot.normalize() Warning! Integral is 0, doing nothing")
+        else:
+            h.Scale(1 / tot)
+    elif mode == "cumulative":
+        tot = h.Integral(0, -1)
+        if tot == 0:
+            print("plot.normalize() Warning! Integral is 0, doing nothing")
+        else:
+            running_sum = 0
+            for i in range(0, h.GetNbinsX() + 2): 
+                running_sum += h.GetBinContent(i)
+                h.SetBinContent(i, running_sum / tot)
+                h.SetBinError(i, 0)
+    elif mode == "cumulativer":
+        tot = h.Integral(0, -1)
+        if tot == 0:
+            print("plot.normalize() Warning! Integral is 0, doing nothing")
+        else:
+            running_sum = 0
+            for i in range(h.GetNbinsX() + 1, -1, -1): 
+                running_sum += h.GetBinContent(i)
+                h.SetBinContent(i, running_sum / tot)
+                h.SetBinError(i, 0)
+    else:
+        raise RuntimeError(f'graphs.normalize() unknown mode: {mode}')
+
+    return h
+
+
+def normalize_ytitle(mode, splitline=False):
+    '''
+    Returns a ytitle given a normalization mode as in [normalize].
+    '''
+    if mode is None:
+        return "Events"
+    if mode == "integral" or mode == True:
+        if splitline: return "#splitline{Normalized}{Events}"
+        return "Normalized Events"
+    elif mode == "integral%":
+        return "% of Total Events"
+    elif "cumulative" in mode:
+        if splitline: return "#splitline{Cumulative}{Events}"
+        return "Cumulative Fraction of Events"
+    else:
+        return "Events"
+
+
+def log_hist(h, min_val=None):
+    h = h.Clone()
+    for i in range(0, h.GetNbinsX() + 2):
+        v = h.GetBinContent(i)
+        if v > min_val or 0:
+            h.SetBinContent(i, np.log(v / min_val))
+        else:
+            h.SetBinContent(i, 0)
+        h.SetBinError(i, 0) # no asymmetric bin errors...
+    return h
+
+
+def get_bin_indexes(axis, bin_edges):
+    '''
+    Returns the bin indexes into `axis` that match `bin_edges`
+    '''
+    current_index = 1
+    indexes = []
+    for bin_edge in bin_edges:
+        ### Increment until the current edge is equal to the requested edge ###
+        while axis.GetBinLowEdge(current_index) < bin_edge:
+            if current_index >= axis.GetNbins(): # Failsafe
+                raise RuntimeError(f'get_bin_indexes() Unable to find fid bin edge {bin_edge}')
+            current_index += 1
+
+        ### Check to make sure the bin edges are aligned ###
+        old_bin_edge = axis.GetBinLowEdge(current_index)
+        if old_bin_edge != bin_edge:
+            raise RuntimeError(f"get_bin_indexes() Bins don't align: requested={bin_edge}, found={old_bin_edge}")
+
+        ### Save ###
+        indexes.append(current_index)
+
+    return indexes
+
+
+def rebin2d(h, bins_x, bins_y, name = '_rebin2d'):
+    '''
+    Rebins a histogram with variable bin sizes, because somehow ROOT hasn't implemented 
+    this. The bins must align!
+
+    @param bins_x,bins_y
+        These should be the N+1 bin edges that define the N bins. The bin edges MUST
+        align with the bin edges of [h].
+    @param name
+        Name postfix to the newly created histogram. Must make sure Root names do not
+        collide.
+    '''
+    h_new = ROOT.TH2F(h.GetName() + name, h.GetTitle(), len(bins_x) - 1, np.array(bins_x, dtype=float), len(bins_y) - 1, np.array(bins_y, dtype=float))
+
+    ### Get the bin indices into `h` that align with the requested bins. These always point to the
+    ### lower edge of the bin.
+    bin_indexes_x = [0] + get_bin_indexes(h.GetXaxis(), bins_x) + [h.GetNbinsX() + 2] # add the underflow and overflow bins
+    bin_indexes_y = [0] + get_bin_indexes(h.GetYaxis(), bins_y) + [h.GetNbinsY() + 2] # add the underflow and overflow bins
+
+    ### Populate the new histogram ###
+    for y_new in range(len(bin_indexes_y) - 1):     # index into the bin_indexes lists
+        for x_new in range(len(bin_indexes_x) - 1): # since we include the underflow bin above, this also indexes into h_new
+            v = 0
+            e = 0
+            for y_old in range(bin_indexes_y[y_new], bin_indexes_y[y_new + 1]): # ROOT bin index into h
+                for x_old in range(bin_indexes_x[x_new], bin_indexes_x[x_new + 1]):
+                    v += h.GetBinContent(x_old, y_old)
+                    e += h.GetBinError(x_old, y_old)**2
+            h_new.SetBinContent(x_new, y_new, v)
+            h_new.SetBinError(x_new, y_new, e**0.5)
+
+    return h_new
 
 
 ##############################################################################
