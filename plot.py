@@ -1025,7 +1025,7 @@ def plot_ratio3(hists1, hists2, hists3, height1=0.55, outlier_arrows=True, hline
     pad1.RedrawAxis() # Make the tick marks go above any fill
 
     ### Draw first ratio plot
-    args2 = { 'ydivs': 503, 'ignore_outliers_y': 3, 'title': None, 'legend': None, 'titlesize': titlesize / height2 }
+    args2 = { 'ydivs': 204, 'ignore_outliers_y': 3, 'title': None, 'legend': None, 'titlesize': titlesize / height2 }
     args2.update(_copy_ratio_args(kwargs, '2'))
     cache.append(_plot(pad2, hists2, do_legend=False, **args2))
     pad2.RedrawAxis() # Make the tick marks go above any fill
@@ -1037,7 +1037,7 @@ def plot_ratio3(hists1, hists2, hists3, height1=0.55, outlier_arrows=True, hline
     if outlier_arrows: cache.append(_outliers(hists2))
 
     ### Draw second ratio plot
-    args3 = { 'ydivs': 503, 'ignore_outliers_y': 3, 'title': None, 'legend': None, 'titlesize': titlesize / height3, 'text_offset_bottom': 0.15 / height3 }
+    args3 = { 'ydivs': 204, 'ignore_outliers_y': 3, 'title': None, 'legend': None, 'titlesize': titlesize / height3, 'text_offset_bottom': 0.15 / height3 }
     args3.update(_copy_ratio_args(kwargs, '3'))
     cache.append(_plot(pad3, hists3, do_legend=False, **args3))
     pad3.RedrawAxis() # Make the tick marks go above any fill
@@ -1322,17 +1322,18 @@ def plot_equiwidth_bins(hists1, hists2=None, hists3=None, plotter=plot, bin_widt
 
     ### Create frame histogram ###
     h_frame = ROOT.TH1D(hists1[0].GetName() + '_frame', '', nbins, 0, nbins)
-    user_frame_callback = kwargs.get('frame_callback')
+
+    ### Adjust labels of x axis ###
+    arg_name = 'frame_callback' + ('3' if hists3 else '2' if hists2 else '')
+    user_frame_callback = kwargs.get(arg_name)
     def frame_callback(frame):
         for i in range(bin_start + 1, bin_end + 2):
             frame.GetXaxis().ChangeLabel(i, 30, -1, -1, -1, -1, f'{h_check.GetBinLowEdge(i):.0f}')
         if user_frame_callback:
             user_frame_callback(frame)
+    kwargs[arg_name] = frame_callback
     kwargs.setdefault('xlabelsize', 0.03) # don't set this in ChangeLabel(), or else the labels get duplicated
     kwargs.setdefault('xlabeloffset', 0.02) 
-    kwargs['frame_callback'] = frame_callback
-    kwargs['frame_callback2'] = frame_callback
-    kwargs['frame_callback3'] = frame_callback
 
     ### Convert objects to TGraphAsymmErrors ###
     def create_graph(obj, i, n):
