@@ -324,10 +324,13 @@ def _get_minmax_all(objs, **kwargs):
         if 'TF' in obj.ClassName(): continue
         min_obj, min_pos_obj, max_obj = _get_minmax(obj, **kwargs)
         if min_obj is None or max_obj is None: continue
+
         if min_val is None or min_obj < min_val: 
             min_val = min_obj
-        if min_pos is None or min_pos_obj < min_pos: 
-            min_pos = min_pos_obj
+
+        if min_pos_obj is not None:
+            if min_pos is None or min_pos_obj < min_pos: min_pos = min_pos_obj
+
         if max_val is None or max_obj > max_val:
             max_val = max_obj
     if min_val is None:
@@ -477,23 +480,24 @@ def _apply_common_opts(obj, i, **kwargs):
     if 'fillstyle' in kwargs:
         obj.SetFillStyle(_arg(kwargs['fillstyle'], i))
 
-    if i == 0:
-        if 'xtitle' in kwargs:
-            obj.GetXaxis().SetTitle(kwargs['xtitle'])
-        if 'ytitle' in kwargs:
-            obj.GetYaxis().SetTitle(kwargs['ytitle'])
-        if 'ztitle' in kwargs:
-            obj.GetZaxis().SetTitle(kwargs['ztitle'])
 
-        if x := kwargs.get('ztitleoffset'):
-            obj.GetZaxis().SetTitleOffset(x)
+def _apply_frame_opts(obj, **kwargs):
+    if 'xtitle' in kwargs:
+        obj.GetXaxis().SetTitle(kwargs['xtitle'])
+    if 'ytitle' in kwargs:
+        obj.GetYaxis().SetTitle(kwargs['ytitle'])
+    if 'ztitle' in kwargs:
+        obj.GetZaxis().SetTitle(kwargs['ztitle'])
 
-        if 'xdivs' in kwargs:
-            obj.GetXaxis().SetNdivisions(kwargs['xdivs'], True)
-        if 'ydivs' in kwargs:
-            obj.GetYaxis().SetNdivisions(kwargs['ydivs'], True)
-        if x := kwargs.get('zdivs'):
-            obj.GetZaxis().SetNdivisions(x, True)
+    if x := kwargs.get('ztitleoffset'):
+        obj.GetZaxis().SetTitleOffset(x)
+
+    if 'xdivs' in kwargs:
+        obj.GetXaxis().SetNdivisions(kwargs['xdivs'], True)
+    if 'ydivs' in kwargs:
+        obj.GetYaxis().SetNdivisions(kwargs['ydivs'], True)
+    if x := kwargs.get('zdivs'):
+        obj.GetZaxis().SetNdivisions(x, True)
 
 
 def _plot(c, objs, opts="",
@@ -501,7 +505,7 @@ def _plot(c, objs, opts="",
     legend=[], legend_order=None, legend_split=1, legend_width=0.2, legend_opts=None, legend_custom=None,
     rightmargin=None,
     logx=None, logy=None, logz=None, stack=False,
-    canvas_callback=None, axis_callback=None,
+    canvas_callback=None, frame_callback=None, frame_histogram=False,
     **kwargs):
     '''
     Main plotting helper function. Plots [objs] on [c], and also a title and legend.
@@ -546,7 +550,20 @@ def _plot(c, objs, opts="",
             stack_reorder_legend = True
             legend_order = []
 
-    ### Process histograms
+    ### Frame ###
+    # ROOT uses the axis of the first object drawn for some ridiculous reason. So this
+    # object controls all the axis properties even when other histograms are drawn.
+    frame = objs[0]
+    if frame_histogram:
+        frame.Draw('')
+        objs = objs[1:]
+        if isinstance(opts, str):
+            opts = 'SAME ' + opts
+        else:
+            opts[0] = 'SAME ' + opts[0]
+    _apply_frame_opts(frame, **kwargs)
+
+    ### Process histograms ###
     for i in range(len(objs)):
         _apply_common_opts(objs[i], i, **kwargs)
 
@@ -603,8 +620,7 @@ def _plot(c, objs, opts="",
 
     ### Draw stack ###
     if stack:
-        if 'TH1' in objs[0].ClassName(): # plot this first since the first object drawn is used by ROOT for axis titles
-            objs[0].Draw(opt)
+        frame.Draw()
         for h, opt in zip(reversed(stack_hists), reversed(stack_opts)):
             h.Draw('SAME ' + opt)
 
@@ -614,18 +630,18 @@ def _plot(c, objs, opts="",
     if kwargs.get('xrange') is not None: # No autorange by default
         xrange = _auto_xrange(objs, **kwargs)
         if xrange is not None: 
-            if 'TGraph' in objs[0].ClassName():
-                objs[0].GetXaxis().SetLimits(*xrange)
+            if 'TGraph' in frame.ClassName():
+                frame.GetXaxis().SetLimits(*xrange)
             else:
-                objs[0].GetXaxis().SetRangeUser(*xrange)
+                frame.GetXaxis().SetRangeUser(*xrange)
             kwargs['xrange'] = xrange
     if kwargs.get('yrange', True) is not None: # default value not used here, just needs to not be None to auto range by default
-        if 'TH2' not in objs[0].ClassName():
+        if 'TH2' not in frame.ClassName():
             yrange = _auto_yrange(objs, logy=logy, **kwargs)
-            objs[0].GetYaxis().SetRangeUser(*yrange)
+            frame.GetYaxis().SetRangeUser(*yrange)
     if zrange := kwargs.get('zrange'):
         zrange = _auto_zrange(objs, zrange=zrange)
-        objs[0].GetZaxis().SetRangeUser(*zrange)
+        frame.GetZaxis().SetRangeUser(*zrange)
 
     ### TEXT AND LEGEND ###
     if subtitle is not None:
@@ -791,7 +807,7 @@ def _plot(c, objs, opts="",
         cache.append(leg)
 
     if canvas_callback: cache.append(canvas_callback(c))
-    if axis_callback: cache.append(axis_callback(objs[0]))
+    if frame_callback: cache.append(frame_callback(frame))
 
     return cache
 
@@ -810,18 +826,19 @@ def _outliers(hists):
 
     markers = []
     for h in hists:
-        for i in range(x_min, x_max + 1):
-            v = h.GetBinContent(i)
-            if v == 0: continue
-            elif y_max is not None and v >= y_max:
-                m = ROOT.TMarker(h.GetXaxis().GetBinCenter(i), y_max - y_pad, ROOT.kFullTriangleUp)
-            elif y_min is not None and v < y_min:
-                m = ROOT.TMarker(h.GetXaxis().GetBinCenter(i), y_min + y_pad, ROOT.kFullTriangleDown)
-            else: continue
-            
-            m.SetMarkerColor(h.GetLineColor())
-            m.Draw()
-            markers.append(m)
+        if 'TH1' in h.ClassName():
+            for i in range(x_min, x_max + 1):
+                v = h.GetBinContent(i)
+                if v == 0: continue
+                elif y_max is not None and v >= y_max:
+                    m = ROOT.TMarker(h.GetXaxis().GetBinCenter(i), y_max - y_pad, ROOT.kFullTriangleUp)
+                elif y_min is not None and v < y_min:
+                    m = ROOT.TMarker(h.GetXaxis().GetBinCenter(i), y_min + y_pad, ROOT.kFullTriangleDown)
+                else: continue
+                
+                m.SetMarkerColor(h.GetLineColor())
+                m.Draw()
+                markers.append(m)
 
     return markers
 
@@ -851,7 +868,7 @@ def _copy_ratio_args(args, postfix):
     return out
 
 
-def _fix_axis_sizing(h, pad, remove_x_labels=False):
+def _fix_axis_sizing(h, pad, remove_x_labels=False, xlabeloffset=0.005, xlabelsize=0.05, **kwargs):
     '''
     Fixes various axes sizing issues when you have multiple pads, since ROOT sizes 
     things based on the pad size not the canvas size.
@@ -869,7 +886,8 @@ def _fix_axis_sizing(h, pad, remove_x_labels=False):
         h.GetXaxis().SetLabelSize(0)
         h.GetXaxis().SetTitleSize(0)
     else:
-        h.GetXaxis().SetLabelSize(old_size / height)
+        h.GetXaxis().SetLabelOffset(xlabeloffset)
+        h.GetXaxis().SetLabelSize(xlabelsize / height)
         h.GetXaxis().SetTitleSize(old_size / height)
         h.GetXaxis().SetTitleOffset(1)
 
@@ -1029,9 +1047,9 @@ def plot_ratio3(hists1, hists2, hists3, height1=0.55, outlier_arrows=True, hline
     if outlier_arrows: cache.append(_outliers(hists3))
 
     ### Fix axes sizing ### 
-    _fix_axis_sizing(hists1[0], pad1, True)
-    _fix_axis_sizing(hists2[0], pad2, True)
-    _fix_axis_sizing(hists3[0], pad3)
+    _fix_axis_sizing(hists1[0], pad1, True, **kwargs)
+    _fix_axis_sizing(hists2[0], pad2, True, **args2)
+    _fix_axis_sizing(hists3[0], pad3, **args3)
 
     ### Callback ###
     if axes_callback:
@@ -1261,6 +1279,106 @@ def plot_3panel(hists1, hists2, hists3, **kwargs):
     plot_ratio3(hists1, hists2, hists3, **kwargs)
 
 
+def plot_equiwidth_bins(hists1, hists2=None, hists3=None, plotter=plot, bin_width=0.6, **kwargs):
+    '''
+    This function plots histograms or graphs side-by-side in each bin (similar to a
+    traditional bar plot), which makes it easier to compare similar histograms. The x-
+    axis is converted to equally spaced bins.
+
+    @param hists1, hists2, hists3
+        A list of TH1s or TGraphs to plot. The first object of hists1 should only be TH1.
+        hists2 and hists3 are optional subplot histograms. All histograms/graphs should
+        have the exact same binning.
+    @param plotter
+        The plot function to use. For example if you want a ratio plot, you should pass
+        [hists1] and [hists2] and set plotter=plot_ratio.
+    @param bin_width
+        The width of plot contents in each bin. This should be a number between 0 and 1,
+        where 1 indicates using the full bin width (no margins).
+
+    The function will create new TGraphAsymmErrors with a custom x axis that ranges from 
+    0 to nbins, respecting any xrange specifications. We do this instead of using alphanu-
+    meric bin labels because those are always drawn at the bin center, not the edges.
+    '''
+    ### Find bins ###
+    bin_start = None # these are 0-indexed
+    bin_end = None # exclusive
+    xrange = _auto_xrange(hists1, **kwargs)
+    h_check = hists1[0]
+    if xrange is None:
+        bin_start = 0
+        bin_end = h_check.GetNbinsX()
+    else:
+        for i in range(1, h_check.GetNbinsX() + 2):
+            if bin_start is None and h_check.GetBinLowEdge(i) >= xrange[0]:
+                bin_start = i - 1 # 0-index
+            if bin_end is None and h_check.GetBinLowEdge(i) >= xrange[1]:
+                bin_end = i - 1 # 0-index
+                break
+    nbins = bin_end - bin_start
+    if nbins < 1: raise RuntimeError(f'plot_equiwidth_bins() nbins < 1: nbins={nbins}, xrange={xrange}')
+
+    ### Create frame histogram ###
+    h_frame = ROOT.TH1D(hists1[0].GetName() + '_frame', '', nbins, 0, nbins)
+    user_frame_callback = kwargs.get('frame_callback')
+    def frame_callback(frame):
+        for i in range(bin_start + 1, bin_end + 2):
+            frame.GetXaxis().ChangeLabel(i, 30, -1, -1, -1, -1, f'{h_check.GetBinLowEdge(i):.0f}')
+        if user_frame_callback:
+            user_frame_callback(frame)
+    kwargs.setdefault('xlabelsize', 0.03) # don't set this in ChangeLabel(), or else the labels get duplicated
+    kwargs.setdefault('xlabeloffset', 0.02) 
+    kwargs['frame_callback'] = frame_callback
+    kwargs['frame_callback2'] = frame_callback
+    kwargs['frame_callback3'] = frame_callback
+
+    ### Convert objects to TGraphAsymmErrors ###
+    def create_graph(obj, i, n):
+        pad_start = (1 - bin_width) / 2
+        if n == 1:
+            width = bin_width
+            x = 0.5
+        else:
+            width = bin_width / (n - 1)
+            x = pad_start + i * width
+        width *= 0.8 # leave some space between points
+        
+        g = ROOT.TGraphAsymmErrors(nbins)
+        for i in range(nbins):
+            if 'TH1' in obj.ClassName():
+                v = obj.GetBinContent(bin_start + i + 1)
+                e_low = obj.GetBinError(bin_start + i + 1)
+                e_high = e_low
+            elif 'TGraph' in obj.ClassName():
+                v = obj.GetPointY(bin_start + i)
+                e_low = obj.GetErrorYlow(bin_start + i)
+                e_high = obj.GetErrorYhigh(bin_start + i)
+            g.SetPoint(i, i + x, v)
+            g.SetPointError(i, width / 2, width / 2, e_low, e_high)
+        return g
+
+    def convert_objs(objs):
+        if objs is None: return None
+        out = [create_graph(obj, i, len(objs)) for i,obj in enumerate(objs)]
+        return [h_frame.Clone()] + out
+
+    hists1 = convert_objs(hists1)
+    hists2 = convert_objs(hists2)
+    hists3 = convert_objs(hists3)
+
+    ### Fix args ###
+    kwargs['xdivs'] = -nbins
+    kwargs['xrange'] = (0, nbins)
+    kwargs['frame_histogram'] = True
+    kwargs['frame_histogram2'] = True
+    kwargs['frame_histogram3'] = True
+
+    ### Plot ###
+    pos_args = [hists1]
+    if hists2: pos_args.append(hists2)
+    if hists3: pos_args.append(hists3)
+    plotter(*pos_args, **kwargs)
+
 ##############################################################################
 ###                                COLORS                                  ###
 ##############################################################################
@@ -1463,6 +1581,10 @@ def save_canvas(c, filename):
             c.Print(filename + '.' + t)
 
 
+def _clamp(x):
+    return max(0, min(int(x), 255))
+
+
 def save_canvas_transparent(c, filename):
     '''
     c.Draw() loses any transparent background. This seems to be because TImage initial-
@@ -1520,10 +1642,14 @@ def save_canvas_transparent(c, filename):
                 r = 0
                 g = 0
                 b = 0
-        elif a != 0 and a != 255: # this is an alpha channel that is blended onto the (opaqued) white background. The 4+ is an empircal correction...
-            r = min(4 + int((255 * r + 253 * (a - 255)) / a), 255)
-            g = min(4 + int((255 * g + 253 * (a - 255)) / a), 255)
-            b = min(4 + int((255 * b + 253 * (a - 255)) / a), 255)
+        elif a != 0 and a != 255: # this is an alpha channel that is blended onto the (opaqued) white background.
+            # The alpha value is the true alpha of the blended content though.
+            # So we simply undo the blending on an opaque background: c_new = c_old * a + c_b * (1 - a)
+            # where c_b is the color of the background. With rounding and ROOT weirdness it seems 252 gives a good value.
+            af = a / 255
+            r = _clamp((r - 252 * (1 - af)) / af)
+            g = _clamp((g - 252 * (1 - af)) / af)
+            b = _clamp((b - 252 * (1 - af)) / af)
         arr[x] = (a << 24) + (b << 16) + (g << 8) + r
 
     ### Save ###
@@ -1790,6 +1916,40 @@ def rebin2d(h, bins_x, bins_y, name = '_rebin2d'):
             h_new.SetBinError(x_new, y_new, e**0.5)
 
     return h_new
+
+
+def graph_divide(a, b, errors_a=True, errors_b=True):
+    '''
+    Return a / b when a is a TGraphAsymmErors. The output is also a TGraphAsymmErors. The
+    points of a should align with the bins of b.
+    '''
+    out = a.Clone()
+    for i in range(a.GetN()):
+        va = a.GetPointY(i)
+        vb = b.GetBinContent(i + 1)
+        if va == 0 or vb == 0:
+            out.SetPointY(i, 0)
+            out.SetPointEYhigh(i, 0)
+            out.SetPointEYlow(i, 0)
+            continue
+        
+        r = va / vb
+        err_hi = 0
+        err_lo = 0
+        if errors_a: 
+            err_hi += (out.GetErrorYhigh(i) / va)**2
+            err_lo += (out.GetErrorYlow(i) / va)**2
+        if errors_b:
+            err = (b.GetBinError(i + 1) / vb)**2
+            err_hi += err
+            err_lo += err
+
+        out.SetPointY(i, r)
+        out.SetPointEYhigh(i, r * err_hi**0.5)
+        out.SetPointEYlow(i, r * err_lo**0.5)
+
+    return out
+
 
 
 ##############################################################################
