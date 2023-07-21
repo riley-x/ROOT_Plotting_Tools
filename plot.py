@@ -602,6 +602,8 @@ def _plot(c, objs, opts="",
             else:
                 opt = opt + 'A'
             objs[i].Draw(opt)
+            if '2+' in opt: # Specify 2+ to draw both error rectangles and bars
+                objs[i].Draw('SAME ' + opt.replace('2+', '').replace('A', ''))
         elif 'TF' in objs[i].ClassName():
             if i > 0:
                 opt = 'SAME ' + opt
@@ -876,7 +878,7 @@ def _fix_axis_sizing(h, pad, remove_x_labels=False, xlabeloffset=0.005, xlabelsi
     old_size = 0.05    
     old_offset_x = 1.4 
     old_offset_y = 1.4 
-    tick_length_x = 0.03
+    tick_length_x = 0.015
     tick_length_y = 0.03
 
     height = pad.GetHNDC()
@@ -895,7 +897,7 @@ def _fix_axis_sizing(h, pad, remove_x_labels=False, xlabeloffset=0.005, xlabelsi
     h.GetYaxis().SetTitleSize(old_size / height)
     h.GetYaxis().SetTitleOffset(old_offset_y * height)
 
-    h.GetXaxis().SetTickLength(tick_length_x / (1 - pad.GetTopMargin() - pad.GetBottomMargin())) 
+    h.GetXaxis().SetTickLength(tick_length_x / height) 
     h.GetYaxis().SetTickLength(tick_length_y / (1 - pad.GetTopMargin() - pad.GetBottomMargin())) 
     # See https://root-forum.cern.ch/t/inconsistent-tick-length/18563/9
     # The tick scale is affected by the margins: tick_length = pixel_size / ((pad2H - marginB - marginT) / pad2H * pad2W)
@@ -1335,14 +1337,11 @@ def plot_equiwidth_bins(hists1, hists2=None, hists3=None, plotter=plot, bin_widt
     ### Convert objects to TGraphAsymmErrors ###
     def create_graph(obj, i, n):
         pad_start = (1 - bin_width) / 2
-        if n == 1:
-            width = bin_width
-            x = 0.5
-        else:
-            width = bin_width / (n - 1)
-            x = pad_start + i * width
+        width = bin_width / n
+        x = pad_start + (i + 0.5) * width
         width *= 0.8 # leave some space between points
         
+        ### Create the graph ###
         g = ROOT.TGraphAsymmErrors(nbins)
         for i in range(nbins):
             if 'TH1' in obj.ClassName():
@@ -1355,6 +1354,16 @@ def plot_equiwidth_bins(hists1, hists2=None, hists3=None, plotter=plot, bin_widt
                 e_high = obj.GetErrorYhigh(bin_start + i)
             g.SetPoint(i, i + x, v)
             g.SetPointError(i, width / 2, width / 2, e_low, e_high)
+
+        ### Copy plot attributes ###
+        g.SetLineColor(obj.GetLineColor())
+        g.SetLineWidth(obj.GetLineWidth())
+        g.SetLineStyle(obj.GetLineStyle())
+        g.SetMarkerColor(obj.GetMarkerColor())
+        g.SetMarkerSize(obj.GetMarkerSize())
+        g.SetMarkerStyle(obj.GetMarkerStyle())
+        g.SetFillColor(obj.GetFillColor())
+        g.SetFillStyle(obj.GetFillStyle())
         return g
 
     def convert_objs(objs):
@@ -1932,7 +1941,7 @@ def graph_divide(a, b, errors_a=True, errors_b=True):
             out.SetPointEYhigh(i, 0)
             out.SetPointEYlow(i, 0)
             continue
-        
+
         r = va / vb
         err_hi = 0
         err_lo = 0
