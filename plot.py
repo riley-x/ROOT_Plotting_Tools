@@ -1281,44 +1281,53 @@ def plot_3panel(hists1, hists2, hists3, **kwargs):
     plot_ratio3(hists1, hists2, hists3, **kwargs)
 
 
-def plot_equiwidth_bins(hists1, hists2=None, hists3=None, plotter=plot, bin_width=0.6, **kwargs):
+def plot_discrete_bins(hists1, hists2=None, hists3=None, plotter=plot, bin_width=0.6, edge_labels=None, **kwargs):
     '''
     This function plots histograms or graphs side-by-side in each bin (similar to a
     traditional bar plot), which makes it easier to compare similar histograms. The x-
     axis is converted to equally spaced bins.
 
     @param hists1, hists2, hists3
-        A list of TH1s or TGraphs to plot. The first object of hists1 should only be TH1.
-        hists2 and hists3 are optional subplot histograms. All histograms/graphs should
-        have the exact same binning.
+        A list of TH1s or TGraphs to plot. The first object of [hists1] should be TH1, or
+        else specify [edge_labels].
+        [hists2] and [hists3] are optional subplot histograms. All histograms/graphs 
+        should have the exact same binning.
     @param plotter
         The plot function to use. For example if you want a ratio plot, you should pass
         [hists1] and [hists2] and set plotter=plot_ratio.
     @param bin_width
         The width of plot contents in each bin. This should be a number between 0 and 1,
         where 1 indicates using the full bin width (no margins).
+    @param edge_labels
+        Specify a list of replacement labels for the bin edges. This should have length
+        equal to nbins+1, and will ignore the x values of the histograms.
 
     The function will create new TGraphAsymmErrors with a custom x axis that ranges from 
     0 to nbins, respecting any xrange specifications. We do this instead of using alphanu-
     meric bin labels because those are always drawn at the bin center, not the edges.
     '''
     ### Find bins ###
-    bin_start = None # these are 0-indexed
-    bin_end = None # exclusive
-    xrange = _auto_xrange(hists1, **kwargs)
-    h_check = hists1[0]
-    if xrange is None:
-        bin_start = 0
-        bin_end = h_check.GetNbinsX()
+    if edge_labels:
+        bin_start = 0 # these are 0-indexed
+        bin_end = len(edge_labels) - 1 # exclusive
+        nbins = bin_end
     else:
-        for i in range(1, h_check.GetNbinsX() + 2):
-            if bin_start is None and h_check.GetBinLowEdge(i) >= xrange[0]:
-                bin_start = i - 1 # 0-index
-            if bin_end is None and h_check.GetBinLowEdge(i) >= xrange[1]:
-                bin_end = i - 1 # 0-index
-                break
-    nbins = bin_end - bin_start
-    if nbins < 1: raise RuntimeError(f'plot_equiwidth_bins() nbins < 1: nbins={nbins}, xrange={xrange}')
+        bin_start = None # these are 0-indexed
+        bin_end = None # exclusive
+        xrange = _auto_xrange(hists1, **kwargs)
+        h_check = hists1[0]
+        if xrange is None:
+            bin_start = 0
+            bin_end = h_check.GetNbinsX()
+        else:
+            for i in range(1, h_check.GetNbinsX() + 2):
+                if bin_start is None and h_check.GetBinLowEdge(i) >= xrange[0]:
+                    bin_start = i - 1 # 0-index
+                if bin_end is None and h_check.GetBinLowEdge(i) >= xrange[1]:
+                    bin_end = i - 1 # 0-index
+                    break
+        nbins = bin_end - bin_start
+        if nbins < 1: raise RuntimeError(f'plot_equiwidth_bins() nbins < 1: nbins={nbins}, xrange={xrange}')
 
     ### Create frame histogram ###
     h_frame = ROOT.TH1D(hists1[0].GetName() + '_frame', '', nbins, 0, nbins)
@@ -1327,8 +1336,9 @@ def plot_equiwidth_bins(hists1, hists2=None, hists3=None, plotter=plot, bin_widt
     arg_name = 'frame_callback' + ('3' if hists3 else '2' if hists2 else '')
     user_frame_callback = kwargs.get(arg_name)
     def frame_callback(frame):
-        for i in range(bin_start + 1, bin_end + 2):
-            frame.GetXaxis().ChangeLabel(i, 30, -1, -1, -1, -1, f'{h_check.GetBinLowEdge(i):.0f}')
+        for i in range(bin_start + 1, bin_end + 2): # ticks are 1-indexed
+            label = edge_labels[i - 1] if edge_labels else f'{h_check.GetBinLowEdge(i):.0f}'
+            frame.GetXaxis().ChangeLabel(i, 30, -1, -1, -1, -1, label)
         if user_frame_callback:
             user_frame_callback(frame)
     kwargs[arg_name] = frame_callback
@@ -1930,13 +1940,15 @@ def rebin2d(h, bins_x, bins_y, name = '_rebin2d'):
 
 def graph_divide(a, b, errors_a=True, errors_b=True):
     '''
-    Return a / b when a is a TGraphAsymmErors. The output is also a TGraphAsymmErors. The
+    Return a / b when a is a TGraphAsymmErrors. The output is also a TGraphAsymmErrors. The
     points of a should align with the bins of b.
+
+    Assumes b has symmetric errors if it's also a TGraphAsymmErrors.
     '''
     out = a.Clone()
     for i in range(a.GetN()):
         va = a.GetPointY(i)
-        vb = b.GetBinContent(i + 1)
+        vb = b.GetPointY(i) if 'TGraph' in b.ClassName() else b.GetBinContent(i + 1)
         if va == 0 or vb == 0:
             out.SetPointY(i, 0)
             out.SetPointEYhigh(i, 0)
@@ -1950,7 +1962,8 @@ def graph_divide(a, b, errors_a=True, errors_b=True):
             err_hi += (out.GetErrorYhigh(i) / va)**2
             err_lo += (out.GetErrorYlow(i) / va)**2
         if errors_b:
-            err = (b.GetBinError(i + 1) / vb)**2
+            eb = b.GetErrorYhigh(i) if 'TGraph' in b.ClassName() else b.GetBinError(i + 1)
+            err = (eb / vb)**2
             err_hi += err
             err_lo += err
 
