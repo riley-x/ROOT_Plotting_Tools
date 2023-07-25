@@ -1974,6 +1974,24 @@ def graph_divide(a, b, errors_a=True, errors_b=True):
     return out
 
 
+##############################################################################
+###                                LOGGING                                 ###
+##############################################################################
+
+def success(x):
+    '''Prints a green message to the terminal.'''
+    print('\033[92m' + x + '\033[0m')
+
+
+def warning(x):
+    '''Prints a yellow warning message to the terminal.'''
+    print('\033[93mWARNING ' + x + '\033[0m')
+
+
+def error(x):
+    '''Prints a red error message to the terminal.'''
+    print('\033[91mERROR ' + x + '\033[0m')
+
 
 ##############################################################################
 ###                                  MAIN                                  ###
