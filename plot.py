@@ -1062,12 +1062,13 @@ def plot_ratio3(hists1, hists2, hists3, height1=0.55, outlier_arrows=True, hline
     return c, cache
 
 
-def plot_two_scale(hists1, hists2, **kwargs):
+def plot_two_scale(hists1, hists2, canvas=None, **kwargs):
     '''
     Plots a graph with two y-axes sharing the same x-axis
 
     TODO auto legend
     '''
+    c = canvas or ROOT.TCanvas('c1', 'c1', 1000, 800)
 
     ### Style
     ROOT.gStyle.SetPadTickY(0) # remove right tick marks
@@ -1077,7 +1078,6 @@ def plot_two_scale(hists1, hists2, **kwargs):
     kwargs.setdefault('xdivs', 506)
 
     ### Plot the left histograms
-    c = ROOT.TCanvas('c1', 'c1', 1000, 800)
     c.SetFillColor(colors.transparent_white)
     cache = _plot(c, hists1, **kwargs)
     c.Update() # So that GetUymin works below
@@ -1105,7 +1105,7 @@ def plot_two_scale(hists1, hists2, **kwargs):
                 h.SetPointY(i, c.GetUymin() + (h.GetPointY(i) - yrange2[0]) * scale)
 
     ### Plot the right histograms
-    cache2 = _plot(c, hists2, opts=opts2, do_legend=False, **args2)
+    cache.append(_plot(c, hists2, opts=opts2, do_legend=False, **args2))
 
     ### Draw the second axis
     xmax = c.GetUxmax()
@@ -1121,8 +1121,11 @@ def plot_two_scale(hists1, hists2, **kwargs):
     axis.SetTitleColor(colors.red)
     axis.SetLineColor(colors.red)
     axis.Draw()
+    cache.append(axis)
 
-    save_canvas(c, kwargs.get('filename', hists1[0].GetName()))
+    if not canvas:
+        save_canvas(c, kwargs.get('filename', hists1[0].GetName()))
+    return cache
 
 
 def _draw_tier_fill(h, y, i, fillcolor=None, **kwargs):
