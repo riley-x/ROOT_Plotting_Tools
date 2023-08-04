@@ -1083,7 +1083,7 @@ def plot_two_scale(hists1, hists2, **kwargs):
     c.Update() # So that GetUymin works below
 
     ### Get args2
-    args2 = { k[:-1]:v for k,v in kwargs.items() if k[-1] == '2' }
+    args2 = _copy_ratio_args(kwargs, '2')
 
     ### Fix opts to plot 'SAME'
     opts2 = args2.pop('opts', '')
@@ -1093,24 +1093,29 @@ def plot_two_scale(hists1, hists2, **kwargs):
 
     ### Scale histograms to new yrange
     yrange2 = _auto_yrange(hists2, **args2)
-    args2.pop('yrange', None)
+    args2['yrange'] = yrange2
     scale = (c.GetUymax() - c.GetUymin()) / (yrange2[1] - yrange2[0])
+    hists2 = [h.Clone() for h in hists2]
     for h in hists2:
         if 'TH' in h.ClassName():
-            h.Scale(scale)
+            for i in range(h.GetNbinsX()):
+                h.SetPointY(i, c.GetUymin() + (h.GetBinContent(i) - yrange2[0]) * scale)
         elif 'TGraph' in h.ClassName():
             for i in range(h.GetN()):
                 h.SetPointY(i, c.GetUymin() + (h.GetPointY(i) - yrange2[0]) * scale)
 
     ### Plot the right histograms
-    cache2 = _plot(c, hists2, opts=opts2, yrange=yrange2, do_legend=False, **args2)
+    cache2 = _plot(c, hists2, opts=opts2, do_legend=False, **args2)
 
     ### Draw the second axis
-    axis = ROOT.TGaxis(c.GetUxmax(), c.GetUymin(), c.GetUxmax(), c.GetUymax(), yrange2[0], yrange2[1], 510, '+L')
+    xmax = c.GetUxmax()
+    if kwargs.get('logx'):
+        xmax = (np.power(10, xmax))
+    axis = ROOT.TGaxis(xmax, c.GetUymin(), xmax, c.GetUymax(), yrange2[0], yrange2[1], 510, '+L')
     axis.SetLabelFont(hists1[0].GetXaxis().GetLabelFont()) # 42
     axis.SetLabelSize(hists1[0].GetXaxis().GetLabelSize()) # 0.5
     axis.SetLabelColor(colors.red)
-    axis.SetTitle(kwargs.get('ytitle2'))
+    axis.SetTitle(kwargs.get('ytitle2', ''))
     axis.SetTitleFont(hists1[0].GetXaxis().GetLabelFont()) # 42
     axis.SetTitleSize(hists1[0].GetXaxis().GetLabelSize()) # 0.5
     axis.SetTitleColor(colors.red)
