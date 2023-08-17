@@ -1876,6 +1876,19 @@ def normalize_ytitle(mode, splitline=False):
         return "Events"
 
 
+def normalize_2d(h, mode):
+    if mode == 'y_bin':
+        for y in range(0, h.GetNbinsY() + 2):
+            sum_bin = 0
+            for x in range(0, h.GetNbinsX() + 2):
+                sum_bin += h.GetBinContent(x, y)
+            if sum_bin <= 0: continue
+            for x in range(0, h.GetNbinsX() + 2):
+                h.SetBinContent(x, y, h.GetBinContent(x, y) / sum_bin)
+                h.SetBinError(x, y, h.GetBinError(x, y) / sum_bin)
+    return h
+                
+
 def log_hist(h, min_val=None):
     h = h.Clone()
     for i in range(0, h.GetNbinsX() + 2):
