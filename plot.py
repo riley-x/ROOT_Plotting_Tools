@@ -505,6 +505,7 @@ def _plot(c, objs, opts="",
     legend=[], legend_order=None, legend_split=1, legend_width=0.2, legend_opts=None, legend_custom=None,
     rightmargin=None,
     logx=None, logy=None, logz=None, stack=False,
+    yrange=(None, None),
     canvas_callback=None, frame_callback=None, frame_histogram=False,
     **kwargs):
     '''
@@ -628,7 +629,6 @@ def _plot(c, objs, opts="",
 
     ### Auto range
     xrange = None
-    yrange = None
     if kwargs.get('xrange') is not None: # No autorange by default
         xrange = _auto_xrange(objs, **kwargs)
         if xrange is not None: 
@@ -637,10 +637,10 @@ def _plot(c, objs, opts="",
             else:
                 frame.GetXaxis().SetRangeUser(*xrange)
             kwargs['xrange'] = xrange
-    if kwargs.get('yrange', True) is not None: # default value not used here, just needs to not be None to auto range by default
+    if yrange is not None: 
         if 'TH2' not in frame.ClassName():
-            yrange = _auto_yrange(objs, logy=logy, **kwargs)
-            frame.GetYaxis().SetRangeUser(*yrange)
+            yrange = _auto_yrange(objs, yrange=yrange, logy=logy, **kwargs)
+        frame.GetYaxis().SetRangeUser(*yrange)
     if zrange := kwargs.get('zrange'):
         zrange = _auto_zrange(objs, zrange=zrange)
         frame.GetZaxis().SetRangeUser(*zrange)
