@@ -132,7 +132,7 @@ xtitle/ytitle
     Title for the x/y-axis.
 xdivs/ydivs
     See TAxis::SetNdivisions. Sets the number of ticks on each axis. 
-xrange/yrange                                           default: None / (None, None)
+x_range/y_range                                         default: (None, None)
     Specify a list or a tuple of the (min, max) range of the axis to plot. You can set
     either entry to None to automatically fit plot contents. Set the entire argument to
     None to use default ROOT behavior. 
@@ -141,6 +141,10 @@ ydatapad_bot/top                                        default: 0.1
     data points don't crowd the edges. Also useful to make room for titles and legends.
     The value is in axis coordinates, so a value of 0.1 on both bottom and top makes the
     data only appear in the center 80% of the plot. 
+x_pad_left/right                                        default: 0
+    If using an automatic x-axis range, amount of padding at the left/right so that the
+    data points don't crowd the edges. The value is in axis coordinates, so a value of 
+    0.1 on both makes the data only appear in the center 80% of the plot. 
 ignore_outliers_y
     If using an automatic y-axis range, will ignore points when calculating the min/max
     bounds if they're more than this many standard deviations away from the mean.
@@ -222,19 +226,45 @@ def _arg(val, i):
         return val
 
 class Plotter:
-    def __init__(self, 
+    def __init__(self, pad,
         objs=[], opts='', stack=False, 
-        right_margin=0.05,
+        logx=None, logy=None, logz=None, right_margin=0.05,
         text_pos='topleft', 
         title_size=0.05, text_size=0.035, text_spacing=1, 
         text_offset_left=0.2, text_offset_right=0.05, text_offset_top=0.1, text_offset_bottom=0.2,
-        xrange=None, yrange=None,
         **kwargs
     ):
+        ### Pad ###
+        self.pad = pad
+        self.right_margin = right_margin
+        pad.cd()
+        if logx is not None: pad.SetLogx(logx)
+        if logy is not None: pad.SetLogy(logy)
+        if logz is not None: pad.SetLogz(logz)
+        pad.SetRightMargin(right_margin)
+        # if rightmargin is None:
+        #     if 'ztitle' in kwargs:
+        #         rightmargin = 0.2
+        #     elif 'Z' in _arg(opts, 0):
+        #         rightmargin = 0.13
+        #     else:
+        #         rightmargin = 0.05
+
+
+        ### Objs ###
         self.objs = list(objs)
         self.opts = opts
         self.stack = stack
-        self.right_margin = right_margin
+        self.cache = []
+
+        ### Range parsing ###
+        self.x_range = self._auto_x_range(**kwargs)
+        self.y_range = self._auto_y_range(logy=logy, **kwargs)
+
+        ### Object styles ###
+        self._create_frame(**kwargs)
+        for i,obj in enumerate(self.objs):
+            _apply_common_opts(obj, i, **kwargs)
 
         ### Text and Legend ###
         # Sizes and positions are all in pad units 
@@ -252,7 +282,123 @@ class Plotter:
         self._make_texts(**kwargs)
         self._make_legend(**kwargs)
 
-    
+    #####################################################################################
+    ###                                     HISTS                                     ###
+    #####################################################################################
+
+    def _make_stack(self): # TODO
+        if len(stack_hists) > 0:
+            obj.Add(stack_hists[-1])
+            stack_hists.append(objs[i])
+            stack_opts.append(opt)
+
+    def _auto_x_range(self, x_range=(None, None), x_pad=None, x_pad_left=0, x_pad_right=0, **kwargs):
+        if x_range is None: return None
+        if x_range[0] is not None and x_range[1] is not None: return x_range
+
+        if x_pad is not None:
+            x_pad_left = x_pad
+            x_pad_right = x_pad
+        data_width = 1.0 - x_pad_left - x_pad_right
+            
+        x_min, x_max = get_minmax_x(self.objs)
+        if x_min is None or x_max is None: return None
+
+        if x_range[0] is not None: x_min = x_range[0]
+        if x_range[1] is not None: x_max = x_range[1]
+        
+        diff = x_max - x_min
+        if x_range[0] is None: x_min -= x_pad_left * diff / data_width
+        if x_range[1] is None: x_max += x_pad_right * diff / data_width
+
+        return (x_min, x_max)
+
+
+    def _fix_bad_yticks(self, y_min, y_max, y_range, ydivs, at_least_zero):
+        '''
+        When the number of ydivs is small, ROOT sometimes messes up the y axis ticks. 
+        This function tries to fix this by just expanding the axis limits iteratively.
+        '''
+        if ydivs is not None and ydivs % 100 <= 5:
+            for i in range(3): # try three times at most
+                # This is the funciton ROOT seems to use for the ticks
+                nbins = ctypes.c_int(0)
+                bin_low = ctypes.c_double(0)
+                bin_high = ctypes.c_double(0)
+                bin_width = ctypes.c_double(0)
+                ROOT.THLimitsFinder.Optimize(*newrange, ydivs % 100, bin_low, bin_high, nbins, bin_width, '')
+                #print(newrange, bin_low, bin_high, nbins, bin_width)
+
+                # This seems to be when the ticks aren't optimized?
+                need_fix = (nbins.value == 0 or y_min > bin_low.value or y_max < bin_high.value)
+                if not need_fix: break
+                    
+                diff = y_max - y_min
+                if y_range[0] is None: y_min -= diff * 0.1
+                if y_range[1] is None: y_max += diff * 0.1
+                if at_least_zero: y_min = max(y_min, 0)
+        return y_min, y_max
+
+
+    def _auto_y_range(self, y_range='auto', at_least_zero=False, logy=None, y_pad=None, y_pad_bot=0.1, y_pad_top=0.1, ignore_outliers_y=0, ydivs=None, **kwargs):
+        if y_range is None: return None
+        if y_range == 'auto':
+            if 'TH2' in self.objs[0].ClassName(): return None
+            else: y_range = (None, None)
+        if y_range[0] is not None and y_range[1] is not None: return y_range
+
+        if y_pad is not None:
+            y_pad_bot = y_pad
+            y_pad_top = y_pad
+        data_height = 1.0 - y_pad_bot - y_pad_top
+        
+        y_min, y_pos, y_max = get_minmax_y(self.objs, x_range=self.x_range, ignore_outliers_y=ignore_outliers_y)
+        if y_min is None or y_max is None: return
+        if y_range[0] is not None: y_min = y_range[0]
+        if y_range[1] is not None: y_max = y_range[1]
+        if logy:
+            y_min = y_pos if y_min <= 0 else y_min
+            y_min = np.log10(y_min)
+            y_max = np.log10(y_max)
+
+        if y_min >= 0:
+            at_least_zero = True # If everything is positive, make sure that the y_min is at least 0
+
+        diff = y_max - y_min
+        if y_range[0] is None: y_min -= y_pad_bot * diff / data_height
+        if at_least_zero and y_min < 0:
+            y_min = 0
+            diff = y_max
+        if y_range[1] is None: y_max += y_pad_top * diff / data_height
+        
+
+        if logy:
+            y_min = np.power(10, y_min)
+            y_max = np.power(10, y_max)
+        else:
+            y_min, y_max = self._fix_bad_yticks(y_min, y_max, y_range, ydivs, at_least_zero)
+
+        return y_min, y_max
+        
+
+    def _create_frame(self, **kwargs):
+        if self.x_range and self.y_range:
+            self.frame = ROOT.TH1F('h_frame', '', 1, *self.x_range)
+        else: # use objs[0] as the frame to preserve default ROOT behavior 
+            self.frame = self.objs[0].Clone()
+            if self.x_range is not None:
+                if 'TGraph' in self.frame.ClassName():
+                    self.frame.GetXaxis().SetLimits(*self.x_range)
+                else:
+                    self.frame.GetXaxis().SetRangeUser(*self.x_range)
+        if self.y_range is not None:
+            self.frame.GetYaxis().SetRangeUser(*self.y_range)
+        _apply_frame_opts(self.frame, **kwargs)
+
+    def _format_objs(self, **kwargs):
+        for i,obj in enumerate(self.objs):
+            _apply_common_opts(obj, i, **kwargs)
+
 
     #####################################################################################
     ###                                     TEXT                                      ###
@@ -484,7 +630,6 @@ class Plotter:
 
 
 
-
     #####################################################################################
     ###                                     PLOT                                      ###
     #####################################################################################
@@ -542,7 +687,7 @@ class Plotter:
         if _title_vert_pos == 'top':
             texts_pos[1] = self.text_top
         elif _legend_with_title:
-            texts_pos[1] = self.text_bottom + self.texts_height + self.text_spacing + self.legend_height
+            texts_pos[1] = self.text_bottom + self.texts_height + 2 * self.text_spacing + self.legend_height
         else:
             texts_pos[1] = self.text_bottom + self.texts_height
 
@@ -555,65 +700,68 @@ class Plotter:
 
         return texts_pos, legend_pos
 
+    def _draw_objs(self):
+        for i,obj in enumerate(self.objs):
+            opt = _arg(self.opts, i)
+            if opt is None: continue
+            opt = 'SAME ' + opt 
+
+            if 'TH2' in obj.ClassName() and 'TEXT:' in opt:
+                # Custom text format. It seems this is the only way to have differing formats per histograms
+                # https://root-forum.cern.ch/t/draw-two-h2d-histograms-on-the-same-pad-as-text-but-in-different-formats/25234/2
+                ex = ROOT.TExec('ex', 'gStyle->SetPaintTextFormat("{}");'.format(opt.split(':')[1]))
+                ex.Draw()
+                self.cache.append(ex)
+                opt = 'TEXT'
+
+            if opt == 'SAME ': opt = 'SAME' # very important that there's no extraneous space here (???)
+            obj.Draw(opt)
+
+            if 'TGraph' in obj.ClassName() and '2+' in opt: # Specify 2+ to draw both error rectangles and bars
+                obj.Draw(opt.replace('2+', ''))
+    
     def plot(self):
+        if 'TGraph' in self.frame.ClassName():
+            self.frame.Draw('A')
+        else:
+            self.frame.Draw('AXIS')
+        self._draw_objs()
+
         texts_pos, legend_pos = self._get_text_and_legend_pos()
         self._draw_texts(*texts_pos)
         self._draw_legend(*legend_pos)
 
 
 
+def _minmax_x(obj):
+    o_min = None
+    o_max = None
+    if 'TH1' in obj.ClassName() or 'TProfile' in obj.ClassName():
+        for x in range(1, obj.GetNbinsX() + 1):
+            if obj.GetBinContent(x) != 0 or obj.GetBinError(x) != 0:
+                if o_min is None: o_min = obj.GetBinLowEdge(x)
+                o_max = obj.GetBinLowEdge(x + 1)
+        return o_min, o_max
+    elif 'TGraph' in obj.ClassName():
+        for i in range(obj.GetN()):
+            x = obj.GetPointX(i)
+            if o_min is None or x < o_min: o_min = x
+            if o_max is None or x > o_max: o_max = x
+        return o_min, o_max
+    else: 
+        raise RuntimeError('_minmax_x() unknown class ' + obj.ClassName())
 
+def get_minmax_x(objs):
+    x_min = None
+    x_max = None
+    for obj in objs:
+        o_min, o_max = _minmax_x(obj)
+        if o_min is None or o_max is None: continue
+        if x_min is None or o_min < x_min: x_min = o_min
+        if x_max is None or o_max > x_max: x_max = o_max
+    return x_min, x_max    
 
-
-def _auto_xrange(objs, xrange=(None,None), xdatapad=None, xdatapad_left=0, xdatapad_right=0, **kwargs):
-    def min_max(obj):
-        o_min = None
-        o_max = None
-        if 'TH1' in obj.ClassName() or 'TProfile' in obj.ClassName():
-            for x in range(1, obj.GetNbinsX() + 1):
-                if obj.GetBinContent(x) != 0 or obj.GetBinError(x) != 0:
-                    if o_min is None: o_min = obj.GetBinLowEdge(x)
-                    o_max = obj.GetBinLowEdge(x + 1)
-            return o_min, o_max
-        elif 'TGraph' in obj.ClassName():
-            for i in range(obj.GetN()):
-                x = obj.GetPointX(i)
-                if o_min is None or x < o_min: o_min = x
-                if o_max is None or x > o_max: o_max = x
-            return o_min, o_max
-        else: 
-            raise RuntimeError('_get_minmax() unknown class ' + obj.ClassName())
-    
-    if xrange is None:
-        return None
-    elif xrange[0] is None or xrange[1] is None:
-        x_min = None
-        x_max = None
-        for obj in objs:
-            o_min, o_max = min_max(obj)
-            if o_min is None or o_max is None: continue
-            x_min = o_min if x_min is None else min(x_min, o_min)
-            x_max = o_max if x_max is None else max(x_max, o_max)
-
-        diff = x_max - x_min
-        if xdatapad is not None:
-            xdatapad_left = xdatapad
-            xdatapad_right = xdatapad
-        x_min -= xdatapad_left * diff
-        x_max += xdatapad_right * diff
-        newrange = (x_min if xrange[0] is None else xrange[0], x_max if xrange[1] is None else xrange[1])
-        if isinstance(xrange, list):
-            xrange[0] = newrange[0]
-            xrange[1] = newrange[1]
-    else:
-        newrange = xrange
-
-    if newrange[0] is None or newrange[1] is None:
-        return None
-    return newrange
-
-
-def _get_minmax(obj, xrange=None, ignore_outliers_y=0, **kwargs):
+def _minmax_y(obj, x_range=None, ignore_outliers_y=0, **kwargs):
     '''
     Returns (min, min>0, max) of [obj]
 
@@ -629,7 +777,7 @@ def _get_minmax(obj, xrange=None, ignore_outliers_y=0, **kwargs):
         def get(i):
             return (obj.GetPointX(i), obj.GetPointY(i), 1)
     else:
-        raise RuntimeError('_get_minmax() unknown class ' + obj.ClassName())
+        raise RuntimeError('_minmax_y() unknown class ' + obj.ClassName())
 
     ### First pass: get mean and std dev ###
     if ignore_outliers_y:
@@ -639,8 +787,7 @@ def _get_minmax(obj, xrange=None, ignore_outliers_y=0, **kwargs):
         for i in range(n):
             x,y,e = get(i)
             if xrange:
-                if not xrange[0] is None and x < xrange[0]: continue
-                if not xrange[1] is None and x > xrange[1]: continue
+                if x < xrange[0] or x > xrange[1]: continue
             if e == 0: continue
             w_sum += 1/e
             mean_old = mean
@@ -658,117 +805,41 @@ def _get_minmax(obj, xrange=None, ignore_outliers_y=0, **kwargs):
             continue
         if y == math.inf:
             raise RuntimeError(f"_get_minmax() encountered math.inf at bin {i} of {obj.GetName()}")
-        if xrange:
-            if not xrange[0] is None and x < xrange[0]: continue
-            if not xrange[1] is None and x > xrange[1]: continue
+        if x_range:
+            if x < x_range[0] or x > x_range[1]: continue
         if ignore_outliers_y:
             if e != 0 and abs(y - mean) > ignore_outliers_y * std: continue
 
-        o_min = y if o_min is None else min(o_min, y)
-        o_max = y if o_max is None else max(o_max, y)
+        if o_min is None or y < o_min: o_min = y
+        if o_max is None or y > o_max: o_max = y
         if y > 0:
-            o_pos = y if o_pos is None else min(o_pos, y)
+            if o_pos is None or y < o_pos: o_pos = y
+
     return (o_min, o_pos, o_max)
 
-
-def _get_minmax_all(objs, **kwargs):
+def get_minmax_y(objs, **kwargs):
     min_val = None
     min_pos = None
     max_val = None
     for obj in objs:
         if 'TF' in obj.ClassName(): continue
-        min_obj, min_pos_obj, max_obj = _get_minmax(obj, **kwargs)
+        min_obj, min_pos_obj, max_obj = _minmax_y(obj, **kwargs)
         if min_obj is None or max_obj is None: continue
 
-        if min_val is None or min_obj < min_val: 
-            min_val = min_obj
-
+        if min_val is None or min_obj < min_val: min_val = min_obj
+        if max_val is None or max_obj > max_val: max_val = max_obj
         if min_pos_obj is not None:
             if min_pos is None or min_pos_obj < min_pos: min_pos = min_pos_obj
 
-        if max_val is None or max_obj > max_val:
-            max_val = max_obj
     if min_val is None:
-        print(f"WARNING! _get_minmax_all() min_val is None, setting to 0")
-        min_val = 0
+        print(f"WARNING! _get_minmax_all() min_val is None")
     if min_pos is None:
-        print(f"WARNING! _get_minmax_all() min_pos is None, setting to 0")
-        min_pos = 0
+        print(f"WARNING! _get_minmax_all() min_pos is None")
     if max_val is None:
-        print(f"WARNING! _get_minmax_all() max_val is None, setting to 0")
-        max_val = 0
+        print(f"WARNING! _get_minmax_all() max_val is None")
     
     return min_val, min_pos, max_val
 
-
-def _auto_yrange(objs, at_least_zero=False, yrange=(None,None), logy=None, ydatapad_bot=0.1, ydatapad_top=0.1, **kwargs):
-    '''
-    Calculates automatic y-axis limits to fit the current content, with padding.
-
-    @returns The new y-axis limits, as (y_min, y_max)
-
-    @param objs
-        A list of ROOT TObjects. This function will calculate the axis limits based on the
-        min/max value among all these objects.
-    @param yrange
-        Initial y limit values. `None` indicates that this function should optimize that limit,
-        while a set value will be kept as is. Note that if [yrange] is a list, any `None` will
-        be replaced with the calculated the value.
-    @param ydatapad_bot, ydatapad_top
-        Amount of vertical padding to incorporate. These are in axis units, fractions of the
-        axis height. The sum of these two parameters should be in [0, 1].
-    '''
-    if yrange[0] is None or yrange[1] is None:
-        min_val, min_pos, max_val = _get_minmax_all(objs, **kwargs)
-        min_val = min_val if yrange[0] is None else yrange[0]
-        max_val = max_val if yrange[1] is None else yrange[1]
-
-        if logy:
-            min_val = min_pos
-            min_val = np.log10(min_pos)
-            max_val = np.log10(max_val)
-        elif min_val >= 0:
-            at_least_zero = True # If everything is positive, make sure that the y_min is at least 0
-
-        data_height = 1.0 - ydatapad_bot - ydatapad_top
-        diff = (max_val - min_val)
-        min_val = min_val - diff * ydatapad_bot / data_height if yrange[0] is None else yrange[0]
-        max_val = max_val + diff * ydatapad_top / data_height if yrange[1] is None else yrange[1]
-        if at_least_zero:
-            min_val = max(min_val, 0)
-
-        if logy:
-            newrange = (np.power(10, min_val), np.power(10, max_val))
-        else:
-            newrange = (min_val, max_val)
-
-            ### Fix unoptimized ticks when ydivs is small ###
-            if ydivs := kwargs.get('ydivs'):
-                if ydivs % 100 <= 5:
-                    for i in range(3): # try three times at most
-                        nbins = ctypes.c_int(0)
-                        bin_low = ctypes.c_double(0)
-                        bin_high = ctypes.c_double(0)
-                        bin_width = ctypes.c_double(0)
-                        ROOT.THLimitsFinder.Optimize(*newrange, ydivs % 100, bin_low, bin_high, nbins, bin_width, '')
-                        #print(newrange, bin_low, bin_high, nbins, bin_width)
-
-                        # This seems to be when the ticks aren't optimized?
-                        need_fix = (nbins.value == 0 or newrange[0] > bin_low.value or newrange[1] < bin_high.value)
-                        if not need_fix: break
-                        if newrange[0] == 0:
-                            newrange = (0, newrange[1] * 1.1)
-                        else:
-                            diff = newrange[1] - newrange[0]
-                            newrange = (newrange[0] - diff * 0.1, newrange[1] + diff * 0.1)
-        
-        if isinstance(yrange, list):
-            yrange[0] = newrange[0]
-            yrange[1] = newrange[1]
-    else:
-        newrange = yrange
-
-    return newrange
 
 
 def _auto_zrange(objs, zrange=(None,None)):
@@ -843,12 +914,8 @@ def _apply_frame_opts(obj, **kwargs):
         obj.GetZaxis().SetNdivisions(x, True)
 
 
-def _plot(c, objs, opts="",
-    textpos='topleft', titlesize=0.05, titlespacing=1, title='Internal', subtitle=None,
-    rightmargin=None,
-    logx=None, logy=None, logz=None, stack=False,
-    yrange=(None, None),
-    canvas_callback=None, frame_callback=None, frame_histogram=False,
+def _plot(c, 
+    canvas_callback=None, frame_callback=None,
     **kwargs):
     '''
     Main plotting helper function. Plots [objs] on [c], and also a title and legend.
@@ -857,103 +924,7 @@ def _plot(c, objs, opts="",
 
     See file header for list of options.
     '''
-    cache = [] # Store ROOT objects so python doesn't garbage collect these, otherwise they won't plot.
-
-    ### Canvas
-    c.cd()
-    if logx is not None: c.SetLogx(logx)
-    if logy is not None: c.SetLogy(logy)
-    if logz is not None: c.SetLogz(logz)
-    if rightmargin is None:
-        if 'ztitle' in kwargs:
-            rightmargin = 0.2
-        elif 'Z' in _arg(opts, 0):
-            rightmargin = 0.13
-        else:
-            rightmargin = 0.05
-    c.SetRightMargin(rightmargin)
-
-    ### Create stack
-    if stack:
-        stack_hists = []
-        stack_opts = []
-        cache.append(stack_hists)
-
-    ### Frame ###
-    # ROOT uses the axis of the first object drawn for some ridiculous reason. So this
-    # object controls all the axis properties even when other histograms are drawn.
-    frame = objs[0]
-    if frame_histogram:
-        frame.Draw('')
-        objs = objs[1:]
-        if isinstance(opts, str):
-            opts = 'SAME ' + opts
-        else:
-            opts[0] = 'SAME ' + opts[0]
-    _apply_frame_opts(frame, **kwargs)
-
-    ### Process histograms ###
-    for i in range(len(objs)):
-        _apply_common_opts(objs[i], i, **kwargs)
-        opt = _arg(opts, i)
-        if opt is None:
-            continue
-        elif 'TH1' in objs[i].ClassName():
-            if stack:
-                if len(stack_hists) > 0:
-                    objs[i].Add(stack_hists[-1])
-                stack_hists.append(objs[i])
-                stack_opts.append(opt)
-            else:
-                if i > 0: 
-                    if opt: opt = 'SAME ' + opt
-                    else: opt = 'SAME' # very important that there's no extraneous space here
-                objs[i].Draw(opt)
-        elif 'TGraph' in objs[i].ClassName():
-            if 'SAME' in opt:
-                pass
-            elif i > 0:
-                opt = 'SAME ' + opt
-            else:
-                opt = opt + 'A'
-            objs[i].Draw(opt)
-            if '2+' in opt: # Specify 2+ to draw both error rectangles and bars
-                objs[i].Draw('SAME ' + opt.replace('2+', '').replace('A', ''))
-        elif 'TF' in objs[i].ClassName():
-            if i > 0:
-                opt = 'SAME ' + opt
-            objs[i].Draw(opt)
-        else: # TH2
-            if 'TEXT:' in opt:
-                # Custom text format. It seems this is the only way to have differing formats per histograms
-                # https://root-forum.cern.ch/t/draw-two-h2d-histograms-on-the-same-pad-as-text-but-in-different-formats/25234/2
-                temp = opt.split(':')
-                opt = temp[0]
-                ex = ROOT.TExec('ex', 'gStyle->SetPaintTextFormat("{}");'.format(temp[1]))
-                ex.Draw()
-                cache.append(ex)
-            if i > 0: opt = 'SAME ' + opt
-            objs[i].Draw(opt)
-
-    ### Draw stack ###
-    if stack:
-        frame.Draw()
-        for h, opt in zip(reversed(stack_hists), reversed(stack_opts)):
-            h.Draw('SAME ' + opt)
-
     ### Auto range
-    if kwargs.get('xrange') is not None: # No autorange by default
-        xrange = _auto_xrange(objs, **kwargs)
-        if xrange is not None: 
-            if 'TGraph' in frame.ClassName():
-                frame.GetXaxis().SetLimits(*xrange)
-            else:
-                frame.GetXaxis().SetRangeUser(*xrange)
-            kwargs['xrange'] = xrange
-    if yrange is not None: 
-        if 'TH2' not in frame.ClassName():
-            yrange = _auto_yrange(objs, yrange=yrange, logy=logy, **kwargs)
-        frame.GetYaxis().SetRangeUser(*yrange)
     if zrange := kwargs.get('zrange'):
         zrange = _auto_zrange(objs, zrange=zrange)
         frame.GetZaxis().SetRangeUser(*zrange)
@@ -2174,12 +2145,17 @@ def test_plotter():
     c = ROOT.TCanvas('c1', 'c1', 1000, 800)
     h = ROOT.TH1F('h', '', 10, 0, 10)
     h2 = ROOT.TH1F('h2', '', 10, 0, 10)
-    for i in range(10):
+    for i in range(8):
         h.SetBinContent(i + 1, 2 * i)
         h2.SetBinContent(i + 1, 20 - i)
     h.Draw()
     h2.Draw('SAME')
-    plotter = Plotter([h, h2], subtitle=['asdf', 'testest'], text_pos='bottomright')
+    plotter = Plotter(c, [h, h2], 
+        subtitle=['asdf', 'testest'], 
+        text_pos='bottomright',
+        xtitle='wassup',
+        ytitle='test test',
+    )
     plotter.plot()
     c.Print('test.png')
 
