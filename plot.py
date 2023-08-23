@@ -223,29 +223,36 @@ def _arg(val, i):
 
 class Plotter:
     def __init__(self, 
-        objs=[], opts='', stack=False,
-        text_pos='topleft', title_size=0.05, text_size=0.035, text_spacing=1, 
+        objs=[], opts='', stack=False, 
+        right_margin=0.05,
+        text_pos='topleft', 
+        title_size=0.05, text_size=0.035, text_spacing=1, 
+        text_offset_left=0.2, text_offset_right=0.05, text_offset_top=0.1, text_offset_bottom=0.2,
         xrange=None, yrange=None,
         **kwargs
     ):
         self.objs = list(objs)
         self.opts = opts
         self.stack = stack
-
-        self.text_pos = text_pos
+        self.right_margin = right_margin
 
         ### Text and Legend ###
-        # Sizes are all in pad units 
+        # Sizes and positions are all in pad units 
+        self.text_pos = text_pos
+
         self.title_size = title_size
         self.text_size = text_size
         self.text_spacing = text_size * text_spacing * 0.15
 
+        self.text_left = text_offset_left
+        self.text_right = 1 - self.right_margin - text_offset_right
+        self.text_top = 1 - text_offset_top
+        self.text_bottom = text_offset_bottom
+
         self._make_texts(**kwargs)
         self._make_legend(**kwargs)
 
-    def plot(self):
-        self._draw_texts(0.8, 0.9, 'right')
-        self._draw_legend(0.8, 0.6, 'right')
+    
 
     #####################################################################################
     ###                                     TEXT                                      ###
@@ -457,21 +464,101 @@ class Plotter:
             self.legend.AddEntry(*i)
 
     def _draw_legend(self, x, y, align):
+        '''
+        @param y top edge of the texts
+        @param x left or right edge of the texts, depending on [align]
+        @param align either 'left' or 'right'
+        '''
         if not self.legend: return
         if align == 'left':
             al = ROOT.kHAlignLeft
         else:
             al = ROOT.kHAlignRight
-        self.legend.SetTextAlign(al)
+            x -= self.legend_width
+        self.legend.SetTextAlign(al + ROOT.kVAlignCenter)
         self.legend.SetX1(x)
         self.legend.SetX2(x + self.legend_width)
-        self.legend.SetY1(y)
-        self.legend.SetY2(y + self.legend_height)
+        self.legend.SetY1(y - self.legend_height)
+        self.legend.SetY2(y)
         self.legend.Draw()
 
 
 
 
+    #####################################################################################
+    ###                                     PLOT                                      ###
+    #####################################################################################
+
+    def _get_text_and_legend_pos(self):
+        textpos = self.text_pos
+        if 'left' in textpos:
+            _title_hori_pos = 'left'
+            _legend_hori_pos = 'left'
+        elif 'right' in textpos:
+            _title_hori_pos = 'right'
+            _legend_hori_pos = 'right'
+        elif 'reverse' in textpos:
+            _title_hori_pos = 'right'
+            _legend_hori_pos = 'left'
+        else:
+            _title_hori_pos = 'left'
+            _legend_hori_pos = 'right'
+            
+        if 'top' in textpos:
+            _title_vert_pos = 'top'
+            _legend_vert_pos = 'top'
+        elif 'bottom' in textpos:
+            _title_vert_pos = 'bottom'
+            _legend_vert_pos = 'bottom'
+        elif 'forward diagonal' in textpos:
+            if 'reverse' in textpos:
+                _title_vert_pos = 'top'
+                _legend_vert_pos = 'bottom'
+            else:
+                _title_vert_pos = 'bottom'
+                _legend_vert_pos = 'top'
+        else:
+            if 'reverse' in textpos:
+                _title_vert_pos = 'bottom'
+                _legend_vert_pos = 'top'
+            else:
+                _title_vert_pos = 'top'
+                _legend_vert_pos = 'bottom'
+
+        _legend_with_title = _title_hori_pos == _legend_hori_pos and _title_vert_pos == _legend_vert_pos
+
+        texts_pos = [0, 0, _title_hori_pos]
+        legend_pos = [0, 0, _legend_hori_pos]
+        if _title_hori_pos == 'left':
+            texts_pos[0] = self.text_left
+        else:
+            texts_pos[0] = self.text_right
+
+        if _legend_hori_pos == 'left':
+            legend_pos[0] = self.text_left
+        else:
+            legend_pos[0] = self.text_right
+
+        if _title_vert_pos == 'top':
+            texts_pos[1] = self.text_top
+        elif _legend_with_title:
+            texts_pos[1] = self.text_bottom + self.texts_height + self.text_spacing + self.legend_height
+        else:
+            texts_pos[1] = self.text_bottom + self.texts_height
+
+        if _legend_vert_pos == 'bottom':
+            legend_pos[1] = self.text_bottom + self.legend_height
+        elif _legend_with_title:
+            legend_pos[1] = self.text_top - self.texts_height - 2 * self.text_spacing
+        else:
+            legend_pos[1] = self.text_top
+
+        return texts_pos, legend_pos
+
+    def plot(self):
+        texts_pos, legend_pos = self._get_text_and_legend_pos()
+        self._draw_texts(*texts_pos)
+        self._draw_legend(*legend_pos)
 
 
 
@@ -871,75 +958,6 @@ def _plot(c, objs, opts="",
         zrange = _auto_zrange(objs, zrange=zrange)
         frame.GetZaxis().SetRangeUser(*zrange)
 
-    ### TEXT AND LEGEND ###
-
-
-    ### Text positioning ###
-    x_left = kwargs.get('text_offset_left', 0.2)
-    x_right = kwargs.get('text_offset_right', 1 - rightmargin - 0.05)
-    y_top = kwargs.get('text_offset_top', 0.9)
-    y_bottom = kwargs.get('text_offset_bottom', 0.2)
-
-    if 'left' in textpos:
-        _title_hori_pos = 'left'
-        _legend_hori_pos = 'left'
-    elif 'right' in textpos:
-        _title_hori_pos = 'right'
-        _legend_hori_pos = 'right'
-    elif 'reverse' in textpos:
-        _title_hori_pos = 'right'
-        _legend_hori_pos = 'left'
-    else:
-        _title_hori_pos = 'left'
-        _legend_hori_pos = 'right'
-        
-    if 'top' in textpos:
-        _title_vert_pos = 'top'
-        _legend_vert_pos = 'top'
-    elif 'bottom' in textpos:
-        _title_vert_pos = 'bottom'
-        _legend_vert_pos = 'bottom'
-    elif 'forward diagonal' in textpos:
-        if 'reverse' in textpos:
-            _title_vert_pos = 'top'
-            _legend_vert_pos = 'bottom'
-        else:
-            _title_vert_pos = 'bottom'
-            _legend_vert_pos = 'top'
-    else:
-        if 'reverse' in textpos:
-            _title_vert_pos = 'bottom'
-            _legend_vert_pos = 'top'
-        else:
-            _title_vert_pos = 'top'
-            _legend_vert_pos = 'bottom'
-
-    _legend_with_title = _title_hori_pos == _legend_hori_pos and _title_vert_pos == _legend_vert_pos
-
-    ### Titles ###
-    align_title = ROOT.kVAlignBottom
-    if _title_hori_pos == 'left':
-        x_atlas = x_left
-        x_title = x_left + title_atlas_width
-        x_subtitle = x_left
-        align_title += ROOT.kHAlignLeft
-    else:  
-        title_width = get_text_size(title, titlesize)[0] if title else 0
-        x_atlas = x_right - title_width - title_atlas_width
-        x_title = x_right
-        x_subtitle = x_right
-        align_title += ROOT.kHAlignRight
-
-    ### Get initial y positions (remember text is bottom-aligned) ###
-
-
-    if _title_vert_pos == 'top':
-        y_title = y_top - title_height
-    else:
-        y_title = y_bottom + subtitle_height
-        if _legend_with_title:
-            y_title += legend_height + _subtitle_spacing
-        
 
     if canvas_callback: cache.append(canvas_callback(c))
     if frame_callback: cache.append(frame_callback(frame))
@@ -2155,8 +2173,13 @@ def error(x):
 def test_plotter():
     c = ROOT.TCanvas('c1', 'c1', 1000, 800)
     h = ROOT.TH1F('h', '', 10, 0, 10)
+    h2 = ROOT.TH1F('h2', '', 10, 0, 10)
+    for i in range(10):
+        h.SetBinContent(i + 1, 2 * i)
+        h2.SetBinContent(i + 1, 20 - i)
     h.Draw()
-    plotter = Plotter([h], subtitle=['asdf', 'testest'])
+    h2.Draw('SAME')
+    plotter = Plotter([h, h2], subtitle=['asdf', 'testest'], text_pos='bottomright')
     plotter.plot()
     c.Print('test.png')
 
