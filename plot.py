@@ -1071,23 +1071,24 @@ def plot_ratio(hists1, hists2, height1=0.7, outlier_arrows=True, hline=None, axe
     pad2.Draw()
 
     ### Draw main histo, get error histos
-    kwargs['titlesize'] = kwargs.get('titlesize', 0.05) / height1
+    kwargs['title_size'] = kwargs.get('title_size', 0.05) / height1
+    kwargs['text_size'] = kwargs.get('text_size', 0.035) / height1
     kwargs.setdefault('text_offset_bottom', 0.07) 
-    cache.append(_plot(pad1, hists1, **kwargs))
+    plotter1 = _plot(pad1, hists1, **kwargs)
     pad1.RedrawAxis() # Make the tick marks go above any fill
 
     ### Draw ratio plot ###
     args2 = { 'ydivs': 504, 'ignore_outliers_y': 4, 'title': None, 'legend': None }
     args2.update(_copy_ratio_args(kwargs, '2'))
-    cache.append(_plot(pad2, hists2, do_legend=False, **args2))
+    plotter2 = _plot(pad2, hists2, do_legend=False, **args2)
     pad2.RedrawAxis() # Make the tick marks go above any fill
 
     ### Draw y=1 line ###
     cache.append(_draw_horizontal_line(hline, hists2[0], kwargs.get('xrange')))
     
     ### Fix axes sizing ### 
-    _fix_axis_sizing(hists1[0], pad1, True)
-    _fix_axis_sizing(hists2[0], pad2)
+    _fix_axis_sizing(plotter1.frame, pad1, True)
+    _fix_axis_sizing(plotter2.frame, pad2)
     
     ### Draw out-of-bounds arrows ###
     if outlier_arrows: cache.append(_outliers(hists2))
