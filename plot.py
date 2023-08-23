@@ -119,8 +119,8 @@ titlesize                                               default: 0.05
     WARNING ROOT has a bug with measuring text that isn't at some golden sizes. It seems 
     0.05 and 0.035 work well. This may cause right aligning to be broken; it seems the 
     longer the text the more off it'll be.
-titlespacing                                           default: 1.0
-    Multiplicative factor for increasing the spacing between title/subtitle/legend.
+text_spacing                                            default: 1.0
+    Multiplicative factor for modifying the spacing between title/text/legend.
 
 AXES
 -----------------------------------------------------
@@ -145,19 +145,29 @@ ignore_outliers_y
 
 LEGEND
 -----------------------------------------------------
-legend                                                  default: []
-    A list of labels that matches the order of the input TObjects. Can also be an empty
-    list to auto-create labels using the object names, or None to not create a legend.
-    An empty string omits that entry.
-legend_order        
+legend                                                  default: 'auto'
+    Specification for the legend. Several different modes are available:
+        1) None
+            No legend is created.
+        2) [label]
+            Supply a list of string labels for each object. An empty string will omit
+            the respective entry from the legend.
+        3) 'auto'
+            Auto creates the legend using the object ROOT names as labels. 
+        4) [(obj, label, opt)]
+            Manually set each legend entry using a ROOT.TObject as the formatter, a 
+            string label, and the icon draw option.
+    For options (2) and (3), the icon is drawn using the option(s) specified by 
+    [legend_opts], and the order of the legend can be manipulated by [legend_order].
+legend_order                                            default: None
     Reorders and trims the legend. Input a list of indexes into the list in [legend], so
     for example [3, 0, 1] will place the 4th entry first and omit the 3rd. 
-legend_opts
+legend_opts                                             default: context-dependent
     A list matching the legend labels that changes how the symbol is drawn. Can be any 
-    mix of the letters 'PEFL' for point, error bars, fill, line. 
-legend_custom 
-    Input a list of (TObject, label, legend_opt) tuples to create the legend instead of
-    using the input TObjects. This nullifies the above options.
+    mix of the letters 'PEFL' for point, error bars, fill, line. An empty string will omit
+    the respective entry from the legend.
+legend_columns                                          default: 1
+    Number of columns to split the legend across.
 
 
 
@@ -208,6 +218,129 @@ def _arg(val, i):
         return val[i]
     else:
         return val
+
+class Plotter:
+    def __init__(self, 
+        objs=[], opts='', stack=False,
+        text_pos='topleft', title_size=0.05, text_size=0.035, text_spacing=1, title='Internal', subtitle=None,
+        xrange=None, yrange=None,
+        **kwargs
+    ):
+        self.objs = list(objs)
+        self.opts = opts
+        self.stack = stack
+
+        self.text_pos = text_pos
+
+        ### Text sizes ###
+        # These are all in pad units 
+        self.title_size = title_size
+        self.text_size = text_size
+        self.text_spacing = text_size * text_spacing * 0.15
+
+        self._make_legend(**kwargs)
+
+
+    def _default_legend_opt(self, i):
+        opt = ''
+        plot_opt = _arg(self.opts, i)
+        if 'HIST' or 'L' in plot_opt:
+            opt += 'L'
+        if 'P' or 'E' in plot_opt:
+            opt += 'PE'
+        return opt
+
+    def _get_legend_list(self, legend='auto', legend_order=None, legend_opts=None, **kwargs):
+        '''
+        Returns a list of (obj, label, opt).
+        '''
+        ### No legend ###
+        if legend is None: return []
+
+        ### Auto legend ###
+        if legend == 'auto':
+            legend = [x.GetName() for x in self.objs] # use list machinery below
+
+        ### Custom legend ###
+        if not isinstance(legend[0], str): return legend
+
+        ### List of labels ###
+        if len(legend) != len(self.objs):
+            raise RuntimeError(f'Plotter._make_legend() mismatched lengths. Got {len(legend)}, expected {len(self.objs)}.')
+        if legend_opts is None:
+            legend_opts = self._default_legend_opt
+
+        out = []
+        for i,(obj,label) in enumerate(zip(self.objs, legend)):
+            out.append([obj, label, _arg(legend_opts, i)])
+
+        ### Reorder ###
+        if legend_order: 
+            out = [out[i] for i in legend_order]
+        elif self.stack:
+            out.reverse()
+        out = [x for x in out if x[1] and x[2]] # filter empty labels/opts
+
+        return out
+
+    def _max_legend_label_width(self, items):
+        '''
+        Gets the maximum width of a legend label.
+
+        @param items: A list of (_, label, _)
+        '''
+        _max = 0
+        for _,label,_ in items:
+            width = get_text_size(label, self.text_size)[0]
+            if width > _max: _max = width
+        return _max
+
+    def _make_legend(self, legend_columns=1, **kwargs):
+        '''
+        Creates a ROOT.TLegend with entries added. Also measures the legend sizing.
+
+        @sets
+            self.legend
+            self.legend_width
+            self.legend_height
+            self.legend_rows
+            self.legend_columns
+        '''
+        legend_items = self._get_legend_list(**kwargs)
+        if not legend_items:
+            self.legend = None
+            return
+
+        ### Legend size ###
+        # These are in pad units, i.e. fraction of pad width
+        leg_symbol_width = 0.05 # Symbol size
+        leg_symbol_pad = 0.01   # Whitespace between symbol and label
+        leg_label_width = self._max_legend_label_width(legend_items)
+        self.legend_columns = legend_columns
+        self.legend_rows = math.ceil(len(legend_items) / legend_columns)
+        self.legend_width = (leg_symbol_width + leg_symbol_pad + leg_label_width) * legend_columns
+        self.legend_height = self.text_size * self.legend_rows + self.text_spacing * (self.legend_rows - 1)
+
+        ### Legend ###
+        self.legend = ROOT.TLegend()
+        self.legend.SetFillColor(colors.transparent_white)
+        self.legend.SetLineColor(0)
+        self.legend.SetBorderSize(0)
+        self.legend.SetMargin(leg_symbol_width / self.legend_width) # SetMargin expects the fractional width relative to the legend...cause that's intuitive
+        self.legend.SetTextSize(self.text_size)
+        self.legend.SetTextFont(42) # Default ATLAS font
+        self.legend.SetNColumns(legend_columns)
+        for i in legend_items:
+            self.legend.AddEntry(*i)
+
+        # self.legend.SetTextAlign(kwargs.get('legend_align', align_legend))
+        # leg.SetX1(x_legend)
+        # leg.SetX2(x_legend + leg_width)
+        # leg.SetY1(y_legend)
+        # leg.SetY2(y_legend + legend_height)
+        # leg.Draw()
+
+
 
 
 def _auto_xrange(objs, xrange=(None,None), xdatapad=None, xdatapad_left=0, xdatapad_right=0, **kwargs):
@@ -440,18 +573,6 @@ def _auto_zrange(objs, zrange=(None,None)):
     return new_range
 
 
-def _max_width(leg_items, text_size):
-    '''
-    Gets the maximum width of a legend label
-
-    @param leg_items: A list of (_, label, _)
-    '''
-    _max = 0
-    for _,label,_ in leg_items:
-        width = get_text_size(label, text_size)[0]
-        if width > _max: _max = width
-    return _max
-
 
 def get_text_size(text, text_size):
     tex = ROOT.TLatex(0, 0, text)
@@ -502,7 +623,6 @@ def _apply_frame_opts(obj, **kwargs):
 
 def _plot(c, objs, opts="",
     textpos='topleft', titlesize=0.05, titlespacing=1, title='Internal', subtitle=None,
-    legend=[], legend_order=None, legend_split=1, legend_width=0.2, legend_opts=None, legend_custom=None,
     rightmargin=None,
     logx=None, logy=None, logz=None, stack=False,
     yrange=(None, None),
@@ -531,25 +651,11 @@ def _plot(c, objs, opts="",
             rightmargin = 0.05
     c.SetRightMargin(rightmargin)
 
-    ### Create legend
-    do_legend = legend is not None and len(objs) > 1 and not legend_custom
-    if do_legend:
-        leg_items = [] # (TObject, label, drawing option)
-        if not legend_opts:
-            if isinstance(opts, str):
-                legend_opts = opts.replace('SAME', '').replace('HIST', 'L') or 'PE'
-            else:
-                legend_opts = [x.replace('SAME', '').replace('HIST', 'L') or 'PE' for x in opts]
-
     ### Create stack
     if stack:
         stack_hists = []
         stack_opts = []
         cache.append(stack_hists)
-        stack_reorder_legend = False
-        if do_legend and legend_order is None:
-            stack_reorder_legend = True
-            legend_order = []
 
     ### Frame ###
     # ROOT uses the axis of the first object drawn for some ridiculous reason. So this
@@ -567,20 +673,6 @@ def _plot(c, objs, opts="",
     ### Process histograms ###
     for i in range(len(objs)):
         _apply_common_opts(objs[i], i, **kwargs)
-
-        if do_legend:
-            label = legend[i] if legend else objs[i].GetName()
-            opt = _arg(legend_opts, i)
-            leg_items.append((objs[i], label, opt))
-            #if 'TH1' in objs[i].ClassName():
-            #    for func in objs[i].GetListOfFunctions():
-            #        leg_items.append((func, func.GetName(), 'l'))
-        if stack and stack_reorder_legend:
-            if 'TH1' in objs[i].ClassName():
-                legend_order.insert(0, i)
-            else:
-                legend_order.append(i)
-
         opt = _arg(opts, i)
         if opt is None:
             continue
@@ -628,7 +720,6 @@ def _plot(c, objs, opts="",
             h.Draw('SAME ' + opt)
 
     ### Auto range
-    xrange = None
     if kwargs.get('xrange') is not None: # No autorange by default
         xrange = _auto_xrange(objs, **kwargs)
         if xrange is not None: 
@@ -649,13 +740,6 @@ def _plot(c, objs, opts="",
     if subtitle is not None:
         if isinstance(subtitle, str):
             subtitle = [subtitle]
-    if legend_custom:
-        leg_items = legend_custom
-        do_legend = leg_items
-    elif do_legend:
-        if legend_order: leg_items = [leg_items[i] for i in legend_order]
-        leg_items = [x for x in leg_items if x[1] and x[2]]
-        do_legend = leg_items and len(leg_items) > 0
 
     ### Text positioning ###
     x_left = kwargs.get('text_offset_left', 0.2)
@@ -715,13 +799,10 @@ def _plot(c, objs, opts="",
         align_title += ROOT.kHAlignRight
 
     ### Get initial y positions (remember text is bottom-aligned) ###
-    _subtitle_size = titlesize * 0.7
     _title_spacing = titlesize * titlespacing * 0.1
-    _subtitle_spacing = titlesize * titlespacing * 0.15
 
     title_height = get_text_size('ATLAS', titlesize)[1] if title is not None else 0
     subtitle_height = (_subtitle_size + _subtitle_spacing) * len(subtitle) if subtitle is not None else 0
-    legend_height = (_subtitle_size + _subtitle_spacing) * math.ceil(len(leg_items) / legend_split) - _subtitle_spacing if do_legend else 0
 
     if _title_vert_pos == 'top':
         y_title = y_top - title_height
@@ -764,49 +845,6 @@ def _plot(c, objs, opts="",
             cache.append(tex)
             y_title -= _subtitle_spacing
         y_title -= _subtitle_spacing # extra pad before legend
-
-    ### Legend ###
-    if do_legend: 
-        # These are in pad units, i.e. fraction of pad width
-        leg_symbol_width = 0.05
-        leg_symbol_pad = 0.01
-        leg_label_width = _max_width(leg_items, _subtitle_size) * legend_split
-        leg_width = leg_symbol_width + leg_symbol_pad + leg_label_width
-
-        ### Get align and x_legend (left) and y_legend (top) positions
-        align_legend = ROOT.kVAlignTop
-        if _legend_hori_pos == 'left':
-            x_legend = x_left
-            align_legend += ROOT.kHAlignLeft
-        else:  
-            x_legend = x_right - leg_width
-            align_legend += ROOT.kHAlignRight
-        if _legend_vert_pos == 'top':
-            if _legend_with_title:
-                y_legend = y_title - legend_height
-            else:
-                y_legend = y_top - legend_height
-        else:
-            y_legend = y_bottom
-
-        leg = ROOT.TLegend()
-        leg.SetFillColor(colors.transparent_white)
-        leg.SetLineColor(0)
-        leg.SetBorderSize(0)
-        leg.SetMargin(leg_symbol_width / leg_width) # SetMargin expects the fractional width relative to the legend...cause that's intuitive
-        leg.SetTextSize(_subtitle_size)
-        leg.SetTextFont(42) # Default ATLAS font
-        leg.SetTextAlign(kwargs.get('legend_align', align_legend))
-        leg.SetNColumns(legend_split)
-
-        leg.SetX1(x_legend)
-        leg.SetX2(x_legend + leg_width)
-        leg.SetY1(y_legend)
-        leg.SetY2(y_legend + legend_height)
-        for i in leg_items:
-            leg.AddEntry(*i)
-        leg.Draw()
-        cache.append(leg)
 
     if canvas_callback: cache.append(canvas_callback(c))
     if frame_callback: cache.append(frame_callback(frame))
