@@ -256,10 +256,12 @@ class Plotter:
         self.opts = opts
         self.stack = stack
         self.cache = []
+        if stack: self._make_stack()
 
         ### Range parsing ###
         self.x_range = self._auto_x_range(**kwargs)
         self.y_range = self._auto_y_range(logy=logy, **kwargs)
+        self.z_range = self._auto_z_range(**kwargs)
 
         ### Object styles ###
         self._create_frame(**kwargs)
@@ -286,11 +288,14 @@ class Plotter:
     ###                                     HISTS                                     ###
     #####################################################################################
 
-    def _make_stack(self): # TODO
-        if len(stack_hists) > 0:
-            obj.Add(stack_hists[-1])
-            stack_hists.append(objs[i])
-            stack_opts.append(opt)
+    def _make_stack(self):
+        new_objs = []
+        for i,obj in enumerate(self.objs):
+            obj = obj.Clone()
+            if len(new_objs) > 0:
+                obj.Add(new_objs[-1])
+            new_objs.append(obj)
+        self.objs = new_objs
 
     def _auto_x_range(self, x_range=(None, None), x_pad=None, x_pad_left=0, x_pad_right=0, **kwargs):
         if x_range is None: return None
@@ -312,7 +317,6 @@ class Plotter:
         if x_range[1] is None: x_max += x_pad_right * diff / data_width
 
         return (x_min, x_max)
-
 
     def _fix_bad_yticks(self, y_min, y_max, y_range, ydivs, at_least_zero):
         '''
@@ -338,7 +342,6 @@ class Plotter:
                 if y_range[1] is None: y_max += diff * 0.1
                 if at_least_zero: y_min = max(y_min, 0)
         return y_min, y_max
-
 
     def _auto_y_range(self, y_range='auto', at_least_zero=False, logy=None, y_pad=None, y_pad_bot=0.1, y_pad_top=0.1, ignore_outliers_y=0, ydivs=None, **kwargs):
         if y_range is None: return None
@@ -380,6 +383,23 @@ class Plotter:
 
         return y_min, y_max
         
+    def _auto_z_range(self, z_range=None, **kwargs):
+        if z_range is None: return None
+        if z_range[0] is not None and z_range[1] is not None: return z_range
+        
+        min_val = None
+        max_val = None
+        for obj in self.objs:
+            if 'TH2' in obj.ClassName():
+                for y in range(1, obj.GetNbinsY() + 1):
+                    for x in range(1, obj.GetNbinsX() + 1):
+                        v = obj.GetBinContent(x, y)
+                        if v == 0: continue
+                        if min_val is None or v < min_val: min_val = v
+                        if max_val is None or v > max_val: max_val = v
+        if z_range[0] is not None: min_val = z_range[0]
+        if z_range[1] is not None: max_val = z_range[1]
+        return (min_val, max_val)
 
     def _create_frame(self, **kwargs):
         if self.x_range and self.y_range:
@@ -391,8 +411,12 @@ class Plotter:
                     self.frame.GetXaxis().SetLimits(*self.x_range)
                 else:
                     self.frame.GetXaxis().SetRangeUser(*self.x_range)
+        
         if self.y_range is not None:
             self.frame.GetYaxis().SetRangeUser(*self.y_range)
+        if self.z_range is not None:
+            self.frame.GetZaxis().SetRangeUser(*self.z_range)
+
         _apply_frame_opts(self.frame, **kwargs)
 
     def _format_objs(self, **kwargs):
@@ -701,7 +725,10 @@ class Plotter:
         return texts_pos, legend_pos
 
     def _draw_objs(self):
-        for i,obj in enumerate(self.objs):
+        it = enumerate(self.objs)
+        if self.stack: it = reversed(it)
+        
+        for i,obj in it:
             opt = _arg(self.opts, i)
             if opt is None: continue
             opt = 'SAME ' + opt 
@@ -786,8 +813,8 @@ def _minmax_y(obj, x_range=None, ignore_outliers_y=0, **kwargs):
         w_sum = 0
         for i in range(n):
             x,y,e = get(i)
-            if xrange:
-                if x < xrange[0] or x > xrange[1]: continue
+            if x_range:
+                if x < x_range[0] or x > x_range[1]: continue
             if e == 0: continue
             w_sum += 1/e
             mean_old = mean
@@ -842,31 +869,6 @@ def get_minmax_y(objs, **kwargs):
 
 
 
-def _auto_zrange(objs, zrange=(None,None)):
-    if zrange[0] is None or zrange[1] is None:
-        min_val = None
-        max_val = None
-        for obj in objs:
-            if 'TH2' in obj.ClassName():
-                for y in range(1, obj.GetNbinsY() + 1):
-                    for x in range(1, obj.GetNbinsX() + 1):
-                        v = obj.GetBinContent(x, y)
-                        if v == 0: continue
-                        if min_val is None or v < min_val: min_val = v
-                        if max_val is None or v > max_val: max_val = v
-        if zrange[0] is not None or min_val is None: min_val = zrange[0]
-        if zrange[1] is not None or max_val is None: max_val = zrange[1]
-        new_range = (min_val, max_val)
-
-        if isinstance(zrange, list):
-            zrange[0] = new_range[0]
-            zrange[1] = new_range[1]
-    else:
-        new_range = zrange
-    return new_range
-
-
-
 def get_text_size(text, text_size):
     tex = ROOT.TLatex(0, 0, text)
     tex.SetTextFont(42)
@@ -914,7 +916,7 @@ def _apply_frame_opts(obj, **kwargs):
         obj.GetZaxis().SetNdivisions(x, True)
 
 
-def _plot(c, 
+def _plot(c, objs,
     canvas_callback=None, frame_callback=None,
     **kwargs):
     '''
@@ -924,16 +926,13 @@ def _plot(c,
 
     See file header for list of options.
     '''
-    ### Auto range
-    if zrange := kwargs.get('zrange'):
-        zrange = _auto_zrange(objs, zrange=zrange)
-        frame.GetZaxis().SetRangeUser(*zrange)
-
-
-    if canvas_callback: cache.append(canvas_callback(c))
-    if frame_callback: cache.append(frame_callback(frame))
-
-    return cache
+    plotter = Plotter(c, objs=objs, **kwargs)
+    plotter.plot()
+    if canvas_callback: 
+        plotter.cache.append(canvas_callback(c))
+    if frame_callback: 
+        plotter.cache.append(frame_callback(plotter.frame))
+    return plotter
 
 
 def _outliers(hists):
@@ -1054,6 +1053,7 @@ def plot_ratio(hists1, hists2, height1=0.7, outlier_arrows=True, hline=None, axe
     '''
     c = ROOT.TCanvas("c1", "c1", 1000, 800)
     c.SetFillColor(colors.transparent_white)
+    cache = []
 
     ### Create pads
     height2 = 1 - height1
@@ -1073,7 +1073,7 @@ def plot_ratio(hists1, hists2, height1=0.7, outlier_arrows=True, hline=None, axe
     ### Draw main histo, get error histos
     kwargs['titlesize'] = kwargs.get('titlesize', 0.05) / height1
     kwargs.setdefault('text_offset_bottom', 0.07) 
-    cache = _plot(pad1, hists1, **kwargs)
+    cache.append(_plot(pad1, hists1, **kwargs))
     pad1.RedrawAxis() # Make the tick marks go above any fill
 
     ### Draw ratio plot ###
