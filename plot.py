@@ -213,22 +213,18 @@ save_transparent = True
 ###                                PLOTTING                                ###
 ##############################################################################
 
-def _arg(val, i):
-    '''
-    Returns val(i) if val is a function and val[i] if val is a list. Otherwise 
-    just returns val.
-    '''
-    if callable(val):
-        return val(i)
-    elif hasattr(val, '__getitem__') and not isinstance(val, str):
-        return val[i]
-    else:
-        return val
-
 class Plotter:
+    '''
+    Main plotting class. Initializing this class draws the full plot; the class object
+    is merely used to store drawn objects, configurations, etc. Usually you should not 
+    bother with this class itself and use the wrapper functions instead.
+    
+    See this file's docstring for configuration options, that can be passed to the initializer
+    in kwargs. 
+    '''
+
     def __init__(self, pad,
         objs=[], opts='', stack=False, 
-        logx=None, logy=None, logz=None, right_margin=0.05,
         text_pos='topleft', 
         title_size=0.05, text_size=0.035, text_spacing=1, 
         text_offset_left=0.2, text_offset_right=0.05, text_offset_top=0.1, text_offset_bottom=0.2,
@@ -236,20 +232,7 @@ class Plotter:
     ):
         ### Pad ###
         self.pad = pad
-        self.right_margin = right_margin
-        pad.cd()
-        if logx is not None: pad.SetLogx(logx)
-        if logy is not None: pad.SetLogy(logy)
-        if logz is not None: pad.SetLogz(logz)
-        pad.SetRightMargin(right_margin)
-        # if rightmargin is None:
-        #     if 'ztitle' in kwargs:
-        #         rightmargin = 0.2
-        #     elif 'Z' in _arg(opts, 0):
-        #         rightmargin = 0.13
-        #     else:
-        #         rightmargin = 0.05
-
+        self._set_pad_properties(**kwargs)
 
         ### Objs ###
         self.objs = list(objs)
@@ -260,7 +243,7 @@ class Plotter:
 
         ### Range parsing ###
         self.x_range = self._auto_x_range(**kwargs)
-        self.y_range = self._auto_y_range(logy=logy, **kwargs)
+        self.y_range = self._auto_y_range(**kwargs)
         self.z_range = self._auto_z_range(**kwargs)
 
         ### Object styles ###
@@ -269,7 +252,7 @@ class Plotter:
             _apply_common_opts(obj, i, **kwargs)
 
         ### Text and Legend ###
-        # Sizes and positions are all in pad units 
+        # Sizes and positions are all in pad units.
         self.text_pos = text_pos
 
         self.title_size = title_size
@@ -283,6 +266,30 @@ class Plotter:
 
         self._make_texts(**kwargs)
         self._make_legend(**kwargs)
+        self._plot()
+
+    #####################################################################################
+    ###                                      PAD                                      ###
+    #####################################################################################
+
+    def _set_pad_properties(self, logx=None, logy=None, logz=None, right_margin=0.05, **kwargs):
+        self.logx = logx
+        self.logy = logy
+        self.logz = logz
+        self.right_margin = right_margin
+
+        self.pad.cd()
+        if logx is not None: self.pad.SetLogx(logx)
+        if logy is not None: self.pad.SetLogy(logy)
+        if logz is not None: self.pad.SetLogz(logz)
+        self.pad.SetRightMargin(right_margin)
+        # if rightmargin is None:
+        #     if 'ztitle' in kwargs:
+        #         rightmargin = 0.2
+        #     elif 'Z' in _arg(opts, 0):
+        #         rightmargin = 0.13
+        #     else:
+        #         rightmargin = 0.05
 
     #####################################################################################
     ###                                     HISTS                                     ###
@@ -343,7 +350,7 @@ class Plotter:
                 if at_least_zero: y_min = max(y_min, 0)
         return y_min, y_max
 
-    def _auto_y_range(self, y_range='auto', at_least_zero=False, logy=None, y_pad=None, y_pad_bot=0.1, y_pad_top=0.1, ignore_outliers_y=0, ydivs=None, **kwargs):
+    def _auto_y_range(self, y_range='auto', at_least_zero=False, y_pad=None, y_pad_bot=0.1, y_pad_top=0.1, ignore_outliers_y=0, ydivs=None, **kwargs):
         if y_range is None: return None
         if y_range == 'auto':
             if 'TH2' in self.objs[0].ClassName(): return None
@@ -359,7 +366,7 @@ class Plotter:
         if y_min is None or y_max is None: return
         if y_range[0] is not None: y_min = y_range[0]
         if y_range[1] is not None: y_max = y_range[1]
-        if logy:
+        if self.logy:
             y_min = y_pos if y_min <= 0 else y_min
             y_min = np.log10(y_min)
             y_max = np.log10(y_max)
@@ -375,7 +382,7 @@ class Plotter:
         if y_range[1] is None: y_max += y_pad_top * diff / data_height
         
 
-        if logy:
+        if self.logy:
             y_min = np.power(10, y_min)
             y_max = np.power(10, y_max)
         else:
@@ -446,16 +453,15 @@ class Plotter:
         @returns 
             The height of the added text.
         '''
-        size = get_text_size(title, self.title_size)
         x = 0
-        y += size[1]
-        line = (y, [])
+        texts = []
         
         ### ATLAS logo ###
         if 'ATLAS' in title:
             atlas = self._create_atlas_title()
-            line[1].append([x, atlas])
+            texts.append([x, atlas])
             x += atlas.GetXsize() + 0.01 # 0.115*696*c.GetWh()/(472*c.GetWw())
+            height = atlas.GetYsize()
             title = title[len('ATLAS '):]
         
         ### Remaining title ###
@@ -465,9 +471,11 @@ class Plotter:
             tex.SetTextFont(42)
             tex.SetTextSize(self.title_size)
             tex.SetTextAlign(ROOT.kVAlignBottom + ROOT.kHAlignLeft)
-            line[1].append([x, tex])
+            texts.append([x, tex])
+            height = tex.GetYsize()
 
-        self.texts.append(line)
+        y += height
+        self.texts.append((y, texts))
         return y
 
     def _make_texts(self, title='ATLAS Internal', subtitle=None, **kwargs):
@@ -635,8 +643,8 @@ class Plotter:
 
     def _draw_legend(self, x, y, align):
         '''
-        @param y top edge of the texts
-        @param x left or right edge of the texts, depending on [align]
+        @param y top edge of the legend
+        @param x left or right edge of the legend, depending on [align]
         @param align either 'left' or 'right'
         '''
         if not self.legend: return
@@ -747,7 +755,7 @@ class Plotter:
             if 'TGraph' in obj.ClassName() and '2+' in opt: # Specify 2+ to draw both error rectangles and bars
                 obj.Draw(opt.replace('2+', ''))
     
-    def plot(self):
+    def _plot(self):
         if 'TGraph' in self.frame.ClassName():
             self.frame.Draw('A')
         else:
@@ -759,6 +767,7 @@ class Plotter:
         self._draw_legend(*legend_pos)
 
 
+### RANGES ###
 
 def _minmax_x(obj):
     o_min = None
@@ -869,12 +878,19 @@ def get_minmax_y(objs, **kwargs):
 
 
 
-def get_text_size(text, text_size):
-    tex = ROOT.TLatex(0, 0, text)
-    tex.SetTextFont(42)
-    tex.SetTextSize(text_size)
-    return tex.GetXsize(), tex.GetYsize()
+### COMMON OPTS ###
 
+def _arg(val, i):
+    '''
+    Returns val(i) if val is a function and val[i] if val is a list. Otherwise 
+    just returns val.
+    '''
+    if callable(val):
+        return val(i)
+    elif hasattr(val, '__getitem__') and not isinstance(val, str):
+        return val[i]
+    else:
+        return val
 
 def _apply_common_opts(obj, i, **kwargs):
     if 'linecolor' in kwargs:
@@ -896,7 +912,6 @@ def _apply_common_opts(obj, i, **kwargs):
     if 'fillstyle' in kwargs:
         obj.SetFillStyle(_arg(kwargs['fillstyle'], i))
 
-
 def _apply_frame_opts(obj, **kwargs):
     if 'xtitle' in kwargs:
         obj.GetXaxis().SetTitle(kwargs['xtitle'])
@@ -916,6 +931,18 @@ def _apply_frame_opts(obj, **kwargs):
         obj.GetZaxis().SetNdivisions(x, True)
 
 
+### MISC ###
+
+def get_text_size(text, text_size):
+    tex = ROOT.TLatex(0, 0, text)
+    tex.SetTextFont(42)
+    tex.SetTextSize(text_size)
+    return tex.GetXsize(), tex.GetYsize()
+
+
+
+### WRAPPERS ###
+
 def _plot(c, objs,
     canvas_callback=None, frame_callback=None,
     **kwargs):
@@ -927,36 +954,31 @@ def _plot(c, objs,
     See file header for list of options.
     '''
     plotter = Plotter(c, objs=objs, **kwargs)
-    plotter.plot()
     if canvas_callback: 
         plotter.cache.append(canvas_callback(c))
     if frame_callback: 
         plotter.cache.append(frame_callback(plotter.frame))
     return plotter
 
-
-def _outliers(hists):
+def _outliers(frame, hists):
     '''
-    Draws outlier arrows for points that aren't in the yrange of the graph. hists[0]
-    should be the axis histogram.
+    Draws outlier arrows for points that aren't in the yrange of the graph. 
     '''
-    y_min = hists[0].GetMinimum() # user coordinates
-    y_max = hists[0].GetMaximum()
+    y_min = frame.GetMinimum() # user coordinates
+    y_max = frame.GetMaximum()
     y_pad = (y_max - y_min) / 50
-
-    x_min = hists[0].GetXaxis().GetFirst() # bins
-    x_max = hists[0].GetXaxis().GetLast()
 
     markers = []
     for h in hists:
         if 'TH1' in h.ClassName():
-            for i in range(x_min, x_max + 1):
-                v = h.GetBinContent(i)
-                if v == 0: continue
+            for i in range(h.GetNbinsX()):
+                v = h.GetBinContent(i+1)
+                x = h.GetXaxis().GetBinCenter(i+1)
+                if v == 0 and h.GetBinError(i+1) == 0: continue
                 elif y_max is not None and v >= y_max:
-                    m = ROOT.TMarker(h.GetXaxis().GetBinCenter(i), y_max - y_pad, ROOT.kFullTriangleUp)
+                    m = ROOT.TMarker(x, y_max - y_pad, ROOT.kFullTriangleUp)
                 elif y_min is not None and v < y_min:
-                    m = ROOT.TMarker(h.GetXaxis().GetBinCenter(i), y_min + y_pad, ROOT.kFullTriangleDown)
+                    m = ROOT.TMarker(x, y_min + y_pad, ROOT.kFullTriangleDown)
                 else: continue
                 
                 m.SetMarkerColor(h.GetLineColor())
@@ -1091,7 +1113,7 @@ def plot_ratio(hists1, hists2, height1=0.7, outlier_arrows=True, hline=None, axe
     _fix_axis_sizing(plotter2.frame, pad2)
     
     ### Draw out-of-bounds arrows ###
-    if outlier_arrows: cache.append(_outliers(hists2))
+    if outlier_arrows: cache.append(_outliers(plotter2.frame, hists2))
 
     ### Callback ###
     if axes_callback:
@@ -1157,7 +1179,7 @@ def plot_ratio3(hists1, hists2, hists3, height1=0.55, outlier_arrows=True, hline
     cache.append(_draw_horizontal_line(hline2, hists2[0], kwargs.get('xrange')))
 
     ### Draw out-of-bounds arrows ###
-    if outlier_arrows: cache.append(_outliers(hists2))
+    if outlier_arrows: cache.append(_outliers(plotter2.frame, hists2))
 
     ### Draw second ratio plot
     args3 = { 'ydivs': 204, 'ignore_outliers_y': 3, 'title': None, 'legend': None, 'titlesize': titlesize / height3, 'text_offset_bottom': 0.15 / height3 }
@@ -1169,7 +1191,7 @@ def plot_ratio3(hists1, hists2, hists3, height1=0.55, outlier_arrows=True, hline
     cache.append(_draw_horizontal_line(hline3, hists3[0], kwargs.get('xrange')))
 
     ### Draw out-of-bounds arrows ###
-    if outlier_arrows: cache.append(_outliers(hists3))
+    if outlier_arrows: cache.append(_outliers(plotter3.frame, hists3))
 
     ### Fix axes sizing ### 
     _fix_axis_sizing(hists1[0], pad1, True, **kwargs)
@@ -2142,26 +2164,6 @@ def error(x):
 ##############################################################################
 
 
-def test_plotter():
-    c = ROOT.TCanvas('c1', 'c1', 1000, 800)
-    h = ROOT.TH1F('h', '', 10, 0, 10)
-    h2 = ROOT.TH1F('h2', '', 10, 0, 10)
-    for i in range(8):
-        h.SetBinContent(i + 1, 2 * i)
-        h2.SetBinContent(i + 1, 20 - i)
-    h.Draw()
-    h2.Draw('SAME')
-    plotter = Plotter(c, [h, h2], 
-        subtitle=['asdf', 'testest'], 
-        text_pos='bottomright',
-        xtitle='wassup',
-        ytitle='test test',
-    )
-    plotter.plot()
-    c.Print('test.png')
-
-
-
 if __name__ == '__main__':
     # Arg parse
     import sys
@@ -2169,7 +2171,6 @@ if __name__ == '__main__':
         file_formats = sys.argv[1:]
 
     # Run
-    # plot_colors()
-    test_plotter()
+    plot_colors()
 
 
