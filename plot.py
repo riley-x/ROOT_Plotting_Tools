@@ -113,8 +113,10 @@ title                                                   default: 'Internal'
 subtitle
     Additional text that is displayed below the ATLAS logo. This can be a string or a 
     list of strings, with the latter putting each entry on a new line.
-titlesize                                               default: 0.05
+title_size                                               default: 0.05
     ROOT text size for the title.
+text_size                                                default: 0.035
+    ROOT text size for non-title text, including subtitle and legend.
 
     WARNING ROOT has a bug with measuring text that isn't at some golden sizes. It seems 
     0.05 and 0.035 work well. This may cause right aligning to be broken; it seems the 
@@ -222,7 +224,7 @@ def _arg(val, i):
 class Plotter:
     def __init__(self, 
         objs=[], opts='', stack=False,
-        text_pos='topleft', title_size=0.05, text_size=0.035, text_spacing=1, title='Internal', subtitle=None,
+        text_pos='topleft', title_size=0.05, text_size=0.035, text_spacing=1, 
         xrange=None, yrange=None,
         **kwargs
     ):
@@ -232,14 +234,134 @@ class Plotter:
 
         self.text_pos = text_pos
 
-        ### Text sizes ###
-        # These are all in pad units 
+        ### Text and Legend ###
+        # Sizes are all in pad units 
         self.title_size = title_size
         self.text_size = text_size
         self.text_spacing = text_size * text_spacing * 0.15
 
+        self._make_texts(**kwargs)
         self._make_legend(**kwargs)
 
+    def plot(self):
+        self._draw_texts(0.8, 0.9, 'right')
+        self._draw_legend(0.8, 0.6, 'right')
+
+    #####################################################################################
+    ###                                     TEXT                                      ###
+    #####################################################################################
+
+    def _create_atlas_title(self):
+        tex = ROOT.TLatex(0, 0, 'ATLAS')
+        tex.SetNDC()
+        tex.SetTextFont(72)
+        tex.SetTextSize(self.title_size)
+        tex.SetTextAlign(ROOT.kVAlignBottom + ROOT.kHAlignLeft)
+        return tex
+
+    def _create_title(self, y, title):
+        '''
+        Creates the title text and appends it to [self.texts]. Custom treament for the
+        ATLAS logo.
+
+        @param y
+            Starting y to place the title line (i.e. the top of the text).
+        @returns 
+            The height of the added text.
+        '''
+        size = get_text_size(title, self.title_size)
+        x = 0
+        y += size[1]
+        line = (y, [])
+        
+        ### ATLAS logo ###
+        if 'ATLAS' in title:
+            atlas = self._create_atlas_title()
+            line[1].append([x, atlas])
+            x += atlas.GetXsize() + 0.01 # 0.115*696*c.GetWh()/(472*c.GetWw())
+            title = title[len('ATLAS '):]
+        
+        ### Remaining title ###
+        if title:
+            tex = ROOT.TLatex(0, 0, title)
+            tex.SetNDC()
+            tex.SetTextFont(42)
+            tex.SetTextSize(self.title_size)
+            tex.SetTextAlign(ROOT.kVAlignBottom + ROOT.kHAlignLeft)
+            line[1].append([x, tex])
+
+        self.texts.append(line)
+        return y
+
+    def _make_texts(self, title='ATLAS Internal', subtitle=None, **kwargs):
+        '''
+        Creates all title and subtitle text, and places them relative to their bounding
+        box. All text is aligned bottom, i.e. the y coordinate is the baseline.
+
+        @sets
+            self.texts          
+                List of lines, where each line is a pair (y, texts) and `texts` is a list
+                of pairs (x, ROOT.TLatex). The x and y are offsets from the top-left of 
+                the text bounding box, referring to the left edge and baseline, assuming 
+                top-left alignment.
+            self.texts_height
+        '''
+        self.texts = [] 
+        y = 0 # running offset (downwards) from top-left of all text
+
+        if title:
+            y = self._create_title(y, title)
+            y += self.text_spacing
+        
+        if subtitle is not None:
+            if isinstance(subtitle, str):
+                subtitle = [subtitle]
+            for i,sub in enumerate(subtitle):
+                if i > 0: y += self.text_spacing
+                y += self.text_size
+
+                tex = ROOT.TLatex(0, 0, sub)
+                tex.SetNDC()
+                tex.SetTextFont(42)
+                tex.SetTextSize(self.text_size)
+                tex.SetTextAlign(ROOT.kVAlignBottom + ROOT.kHAlignLeft)
+
+                self.texts.append([y, [[0, tex]]])
+
+        self.texts_height = y
+
+    def _get_line_width(self, line):
+        '''
+        @param line
+            A list of (x, ROOT.TLatex) pairs. Assumes the entries are in left-to-right 
+            order.
+        '''
+        x_start = line[0][0] # left edge of first text
+        x_end = line[-1][0] + line[-1][1].GetXsize() # right edge of last text
+        return x_end - x_start
+    
+    def _draw_texts(self, x0, y0, align):
+        '''
+        @param y0 top edge of the texts
+        @param x0 left or right edge of the texts, depending on [align]
+        @param align either 'left' or 'right'
+        '''
+        for line in self.texts:
+            y = y0 - line[0]
+            line_width = self._get_line_width(line[1])
+            for x_offset,tex in line[1]:
+                if align == 'left':
+                    x = x0 + x_offset
+                else:
+                    x = x0 - line_width + x_offset
+                tex.SetX(x)
+                tex.SetY(y)
+                tex.Draw()
+
+
+    #####################################################################################
+    ###                                    LEGEND                                     ###
+    #####################################################################################
 
     def _default_legend_opt(self, i):
         opt = ''
@@ -259,6 +381,7 @@ class Plotter:
 
         ### Auto legend ###
         if legend == 'auto':
+            if len(self.objs) < 2: return []
             legend = [x.GetName() for x in self.objs] # use list machinery below
 
         ### Custom legend ###
@@ -333,12 +456,24 @@ class Plotter:
         for i in legend_items:
             self.legend.AddEntry(*i)
 
-        # self.legend.SetTextAlign(kwargs.get('legend_align', align_legend))
-        # leg.SetX1(x_legend)
-        # leg.SetX2(x_legend + leg_width)
-        # leg.SetY1(y_legend)
-        # leg.SetY2(y_legend + legend_height)
-        # leg.Draw()
+    def _draw_legend(self, x, y, align):
+        if not self.legend: return
+        if align == 'left':
+            al = ROOT.kHAlignLeft
+        else:
+            al = ROOT.kHAlignRight
+        self.legend.SetTextAlign(al)
+        self.legend.SetX1(x)
+        self.legend.SetX2(x + self.legend_width)
+        self.legend.SetY1(y)
+        self.legend.SetY2(y + self.legend_height)
+        self.legend.Draw()
+
+
+
+
+
+
 
 
 
@@ -737,9 +872,7 @@ def _plot(c, objs, opts="",
         frame.GetZaxis().SetRangeUser(*zrange)
 
     ### TEXT AND LEGEND ###
-    if subtitle is not None:
-        if isinstance(subtitle, str):
-            subtitle = [subtitle]
+
 
     ### Text positioning ###
     x_left = kwargs.get('text_offset_left', 0.2)
@@ -785,7 +918,6 @@ def _plot(c, objs, opts="",
 
     ### Titles ###
     align_title = ROOT.kVAlignBottom
-    title_atlas_width = 0.115*696*c.GetWh()/(472*c.GetWw())
     if _title_hori_pos == 'left':
         x_atlas = x_left
         x_title = x_left + title_atlas_width
@@ -799,10 +931,7 @@ def _plot(c, objs, opts="",
         align_title += ROOT.kHAlignRight
 
     ### Get initial y positions (remember text is bottom-aligned) ###
-    _title_spacing = titlesize * titlespacing * 0.1
 
-    title_height = get_text_size('ATLAS', titlesize)[1] if title is not None else 0
-    subtitle_height = (_subtitle_size + _subtitle_spacing) * len(subtitle) if subtitle is not None else 0
 
     if _title_vert_pos == 'top':
         y_title = y_top - title_height
@@ -811,40 +940,6 @@ def _plot(c, objs, opts="",
         if _legend_with_title:
             y_title += legend_height + _subtitle_spacing
         
-    ### Place text ###
-    if title is not None:
-        if title:
-            tex = ROOT.TLatex(x_title, y_title, title)
-            tex.SetNDC()
-            tex.SetTextFont(42)
-            tex.SetTextSize(titlesize)
-            tex.SetTextAlign(align_title)
-            tex.Draw()
-            cache.append(tex)
-            title_width = tex.GetXsize()
-
-        tex = ROOT.TLatex(x_atlas, y_title, 'ATLAS')
-        tex.SetNDC()
-        tex.SetTextFont(72)
-        tex.SetTextSize(titlesize)
-        tex.SetTextAlign(ROOT.kVAlignBottom)
-        tex.Draw()
-        cache.append(tex)
-
-        y_title -= _title_spacing
-
-    if subtitle is not None:
-        for sub in subtitle:
-            y_title -= _subtitle_size
-            tex = ROOT.TLatex(x_subtitle, y_title, sub)
-            tex.SetNDC()
-            tex.SetTextFont(42)
-            tex.SetTextSize(_subtitle_size)
-            tex.SetTextAlign(align_title)
-            tex.Draw()
-            cache.append(tex)
-            y_title -= _subtitle_spacing
-        y_title -= _subtitle_spacing # extra pad before legend
 
     if canvas_callback: cache.append(canvas_callback(c))
     if frame_callback: cache.append(frame_callback(frame))
@@ -2057,6 +2152,16 @@ def error(x):
 ##############################################################################
 
 
+def test_plotter():
+    c = ROOT.TCanvas('c1', 'c1', 1000, 800)
+    h = ROOT.TH1F('h', '', 10, 0, 10)
+    h.Draw()
+    plotter = Plotter([h], subtitle=['asdf', 'testest'])
+    plotter.plot()
+    c.Print('test.png')
+
+
+
 if __name__ == '__main__':
     # Arg parse
     import sys
@@ -2064,6 +2169,7 @@ if __name__ == '__main__':
         file_formats = sys.argv[1:]
 
     # Run
-    plot_colors()
+    # plot_colors()
+    test_plotter()
 
 
