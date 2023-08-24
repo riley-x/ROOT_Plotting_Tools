@@ -80,20 +80,16 @@ opts
     specify 'SAME' or 'A', unless you're calling _plot on the same pad more than once. 
     For TH2s, you can also input things like 'TEXT:4.2f' to specify a printf formatter 
     when drawing with 'TEXT'.
-linecolor
-linestyle
-linewidth
+line<color/style/width>
     Sets the corresponding TAttLine properties. See the ROOT documentation for input
     values.
-markercolor
-markerstyle
-markersize
+marker<color/style/size>
     Sets the corresponding TAttMarker properties. See the ROOT documentation for input
     values.
-fillcolor
-fillstyle
+fill<color/style>
     Sets the corresponding TAttFill properties. See the ROOT documentation for input
     values.
+
 
 TEXT AND FILE NAMES
 --------------------------------------------------------
@@ -111,10 +107,11 @@ text_pos                                                default: 'auto'
     specify 'forward diagonal' or 'backward diagonal' to place the title and legend in
     diagonally opposite corners. You can add 'reverse' to some of these to reverse the 
     title and legend positions.
-title                                                   default: 'Internal'
-    A string that appears after the ATLAS logo. Set to None to omit the logo entirely.
+title                                                   default: 'ATLAS Internal'
+    Title text to display in the plot. Any instance of "ATLAS" will be replaced by the 
+    approriate bold, italic string.
 subtitle
-    Additional text that is displayed below the ATLAS logo. This can be a string or a 
+    Additional text that is displayed below the title. This can be a string or a 
     list of strings, with the latter putting each entry on a new line.
 title_size                                              default: 0.05
     ROOT text size for the title.
@@ -126,16 +123,20 @@ text_size                                               default: 0.035
     longer the text the more off it'll be.
 text_spacing                                            default: 1.0
     Multiplicative factor for modifying the spacing between title/text/legend.
+text_offset_<left/right/bottom/top>                     default: 0.05
+    Offset of text elements (titles/legend) from the axes, in pad units. These are only
+    used for relevant [text_pos] options. 
+
 
 AXES
 -----------------------------------------------------
-logx/y/z
+log<x/y/z>
     Sets the canvas to use log x/y/z axes.
-xtitle/ytitle
-    Title for the x/y-axis.
-xdivs/ydivs
+<x/y/z>title
+    Titles for the x/y/z axes.
+<x/y/z>divs
     See TAxis::SetNdivisions. Sets the number of ticks on each axis. 
-x_range/y_range                                         default: (None, None)
+<x/y/z>_range                                           default: (None, None)
     Specify a list or a tuple of the (min, max) range of the axis to plot. You can set
     either entry to None to automatically fit plot contents. Set the entire argument to
     None to use default ROOT behavior. 
@@ -148,11 +149,13 @@ y_pad_bot/top                                           default: 0.05
     If [text_pos] is set to 'auto', these options are treated as minimum padding instead.
 x_pad_left/right                                        default: 0
     If using an automatic x-axis range, amount of padding at the left/right so that the
-    data points don't crowd the edges. The value is in axis coordinates, so a value of 
+    data points don't crowd the edges. The value is in axes coordinates, so a value of 
     0.1 on both makes the data only appear in the center 80% of the plot. 
-ignore_outliers_y
+ignore_outliers_y                                       default: 0
     If using an automatic y-axis range, will ignore points when calculating the min/max
-    bounds if they're more than this many standard deviations away from the mean.
+    bounds if they're more than this many standard deviations away from the mean. Set to
+    0 to disable
+
 
 LEGEND
 -----------------------------------------------------
@@ -185,7 +188,7 @@ legend_columns                                          default: 1
 -----------------------------------------------------------------------------------------
 UTILITY FUNCTIONS
 -----------------------------------------------------------------------------------------
-See each function's docstring for more info.
+See each function's docstring for more info. There are many more than listed here too.
 -----------------------------------------------------------------------------------------
 colors_from_palette
     Returns a list of equally spaced colors from a ROOT palette.
@@ -224,15 +227,15 @@ class Plotter:
     is merely used to store drawn objects, configurations, etc. Usually you should not 
     bother with this class itself and use the wrapper functions instead.
     
-    See this file's docstring for configuration options, that can be passed to the initializer
-    in kwargs. 
+    See this file's docstring for configuration options, that can be passed to the init-
+    ializer in kwargs. 
     '''
 
     def __init__(self, pad,
         objs=[], opts='', stack=False, 
         text_pos='auto', 
         title_size=0.05, text_size=0.035, text_spacing=1, 
-        text_offset_left=0.2, text_offset_right=0.05, text_offset_top=0.1, text_offset_bottom=0.2,
+        text_offset_left=0.05, text_offset_right=0.05, text_offset_top=0.05, text_offset_bottom=0.05,
         y_pad=None, y_pad_bot=0.05, y_pad_top=0.05, 
         **kwargs
     ):
@@ -272,10 +275,10 @@ class Plotter:
         self.text_size = text_size
         self.text_spacing = text_size * text_spacing * 0.15
 
-        self.text_left = text_offset_left
+        self.text_left = self.pad.GetLeftMargin() + text_offset_left
         self.text_right = 1 - self.pad.GetRightMargin() - text_offset_right
-        self.text_top = 1 - text_offset_top
-        self.text_bottom = text_offset_bottom
+        self.text_top = 1 - self.pad.GetTopMargin() - text_offset_top
+        self.text_bottom = self.pad.GetBottomMargin() + text_offset_bottom
 
         self._make_titles(**kwargs)
         self._make_legend(**kwargs)
@@ -962,6 +965,10 @@ class Plotter:
         self.cache.append(m)
 
 
+##############################################################################
+###                                 HELPERS                                ###
+##############################################################################
+
 ### RANGES ###
 
 def _minmax_x(obj):
@@ -1232,6 +1239,9 @@ def _outliers(frame, hists):
     '''
     Draws outlier arrows for points that aren't in the yrange of the graph. 
     '''
+    x_min = frame.GetXaxis().GetXmin()
+    x_max = frame.GetXaxis().GetXmax()
+
     y_min = frame.GetMinimum() # user coordinates
     y_max = frame.GetMaximum()
     y_pad = (y_max - y_min) / 50
@@ -1242,6 +1252,7 @@ def _outliers(frame, hists):
             for i in range(h.GetNbinsX()):
                 v = h.GetBinContent(i+1)
                 x = h.GetXaxis().GetBinCenter(i+1)
+                if x < x_min or x > x_max: continue
                 if v == 0 and h.GetBinError(i+1) == 0: continue
                 elif y_max is not None and v >= y_max:
                     m = ROOT.TMarker(x, y_max - y_pad, ROOT.kFullTriangleUp)
