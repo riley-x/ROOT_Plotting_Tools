@@ -1218,16 +1218,7 @@ def get_text_size(text, text_size):
 ##############################################################################
 
 
-def _plot(c, objs,
-    canvas_callback=None, frame_callback=None,
-    **kwargs):
-    '''
-    Main plotting helper function. Plots [objs] on [c], and also a title and legend.
-    Returns any created ROOT objects (THStack is first), which must not be garbage collected
-    until the canvas is drawn.
-
-    See file header for list of options.
-    '''
+def _plot(c, objs, canvas_callback=None, frame_callback=None, **kwargs):
     plotter = Plotter(c, objs=objs, **kwargs)
     if canvas_callback: 
         plotter.cache.append(canvas_callback(c))

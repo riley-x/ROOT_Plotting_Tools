@@ -52,3 +52,9 @@ A variety of other utility funcitons are also included in this module, such as n
 or rebinning a 2D histogram with variable bins.
 
 ## Examples
+
+### Basic Plot
+
+[Link](./examples/basic_plot.py). Quick example showing how to style histograms, add title text, and set legend labels.
+
+![basic plot](./examples/basic_plot.png)
