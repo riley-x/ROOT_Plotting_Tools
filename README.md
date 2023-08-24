@@ -55,6 +55,14 @@ or rebinning a 2D histogram with variable bins.
 
 ### Basic Plot
 
-[Link](./examples/basic_plot.py). Quick example showing how to style histograms, add title text, and set legend labels.
+[Source](./examples/basic_plot.py). Quick example showing how to style histograms, add title text, and set legend labels.
 
-![basic plot](./examples/basic_plot.png)
+<img src="./examples/basic_plot.png" style="max-height: 3in">
+
+
+### Ratios
+
+[Source](./examples/ratio_plot.py). Example with more complicated formatting and legend, with a ratio subplot.
+
+
+<img src="./examples/ratio_plot.png" style="max-height: 3in">

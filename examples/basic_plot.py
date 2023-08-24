@@ -23,7 +23,6 @@ def basic_plot():
         xtitle='p_{T}(J) [GeV]',
         ### Style ###
         linecolor=plot.colors.tableu,
-        markercolor=plot.colors.tableu,
         markersize=0,
         ### Range ###
         x_range=[50, 250],
