@@ -360,7 +360,7 @@ class Plotter:
                 bin_low = ctypes.c_double(0)
                 bin_high = ctypes.c_double(0)
                 bin_width = ctypes.c_double(0)
-                ROOT.THLimitsFinder.Optimize(*newrange, ydivs % 100, bin_low, bin_high, nbins, bin_width, '')
+                ROOT.THLimitsFinder.Optimize(y_min, y_max, ydivs % 100, bin_low, bin_high, nbins, bin_width, '')
                 #print(newrange, bin_low, bin_high, nbins, bin_width)
 
                 # This seems to be when the ticks aren't optimized?
@@ -820,12 +820,13 @@ class Plotter:
 
         ### Iterate over data points ###
         max_pad = 0
+        pad_bot = self.y_pad_bot if self.auto_y_bot else 0
         for x, y in data_locs_axes:
             for left,right,bottom in occlusions:
                 if x > left and x < right and y > bottom:
                     # y' = y (1 - pad_top - pad_bot) + pad_bot
                     # Set y' == bottom and solve for pad_top
-                    pad_req = 1 - self.y_pad_bot - (bottom - self.y_pad_bot) / y
+                    pad_req = 1 - pad_bot - (bottom - pad_bot) / y
                     max_pad = max(max_pad, pad_req)
         return max_pad
 
