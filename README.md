@@ -1,7 +1,8 @@
 # Riley's declarative ROOT plotting toolkit
 
-Instead of manually adjusting each histogram,
-you can specify style in aggregate. Typical usage would look like:
+Plotting in ROOT is really annoying. You have to remember to call `"SAME"` everywhere,
+axis limits are highly unintuitive, and so on. This module attempts to make ROOT
+plotting easier through a declarative syntax. Typical usage would look like:
 
 ```py
 import plot
@@ -13,7 +14,9 @@ plot.plot([h1, h2],                         # plots two histograms in the same c
     legend = ['Hist 1', 'Hist 2'],
     ytitle = 'Events',
     xtitle = 'm_{T}(W) [GeV]',
-    filename = 'my_plot.png',
+    yrange = [0, None],                     # the yrange's upper end will be automatically adjusted to 
+                                            # fit all data and ensure the title doesn't overlap the plot
+    filename = 'my_plot',
 )
 ```
 
@@ -28,11 +31,11 @@ functions to make some common plot types, like ratio plots.
 
 The format of the saved image is inferred by ROOT based on the extension in the filename.
 If the extension is omitted, the canvas will be saved for each extension listed in
-`plot.file_formats`. This is convenient to save all your plots as both pdfs and pngs by default, for example by specifying:
+`plot.file_formats`. This is convenient to save all your plots as both pdfs and pngs by default, 
+for example by specifying:
 ```py
 plot.file_formats = ['png', 'pdf']
 ```
-
 This module can also save transparent pngs, which is enabled by setting
 ```py
 plot.save_transparent = True

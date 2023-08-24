@@ -757,7 +757,7 @@ class Plotter:
             if min_pad is None or req_pad < min_pad:
                 min_pad = req_pad
                 min_pad_pos = text_pos
-                if min_pad == 0: break
+                if min_pad < self.y_pad_top: break
 
         self.text_pos = min_pad_pos
         self._parse_text_pos(min_pad_pos)
