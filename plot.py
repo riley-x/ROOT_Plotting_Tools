@@ -723,12 +723,10 @@ class Plotter:
         if self.text_pos == 'auto': 
             if 'TH2' in self.objs[0].ClassName() or not self.auto_y_top:
                 self.text_pos = 'topleft'
-        if self.text_pos != 'auto':
+        if self.text_pos != 'auto' or (not self.title_lines and not self.legend):
             self._parse_text_pos(self.text_pos)
             self.y_range = self._pad_y_range(**kwargs)
             return
-
-        print('hi')
 
         ### Parse data ###
         data_locs = {} # dictionary mapping x values to maximum y values, in user coordiantes
@@ -744,7 +742,7 @@ class Plotter:
             data_locs_pad.append(self.user_to_pad(x, y))
 
         ### Test different textpos ###
-        test_pos = ['top', 'top reverse', 'topleft', 'topright'] # list of textpos options to test
+        test_pos = ['top', 'top reverse', 'topleft', 'topright'][:1] # list of textpos options to test
         min_pad = None
         min_pad_pos = None
 
@@ -768,9 +766,9 @@ class Plotter:
         for x, y in data_locs_pad:
             for tex in self.titles:
                 if x > tex.GetX() and x < tex.GetX() + tex.GetXsize():
-                    y_text = tex.GetY()
-                    max_pad = max(max_pad, y - y_text)
-            max_pad = max(max_pad, y - self.legend.GetY1())
+                    max_pad = max(max_pad, y - tex.GetY())
+            if x > self.legend.GetX1() and x < self.legend.GetX2():
+                max_pad = max(max_pad, y - self.legend.GetY1())
         return max_pad
 
     def _parse_text_pos(self, textpos):
@@ -894,6 +892,7 @@ class Plotter:
 
         for tex in self.titles: tex.Draw()
         if self.legend: self.legend.Draw()
+        self.print_titles()
 
 
 ### RANGES ###
