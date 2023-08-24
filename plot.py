@@ -101,8 +101,11 @@ filename
     Path to save the image to. If the filename ends with an extension like '.png', the
     file will be saved in that format. If no extension is given, saves the file with
     each extension in [plot.file_formats].
-textpos                                                 default: 'top left'
-    Location of title / legend. Can be a combination of [top/bottom] and/or [left/right],
+text_pos                                                default: 'auto'
+    Location of title / legend. Set to 'auto' to automatically adjust position and y axis
+    range (if [y_range] is set to enable auto adjusting) to fit the text. 
+    
+    Alternatively, can be a combination of (top/bottom) and/or (left/right),
     so for example 'top' will place the title in the top-left corner and the legend in
     the top-right, while 'top left' will place both in the top-left corner. You can also 
     specify 'forward diagonal' or 'backward diagonal' to place the title and legend in
@@ -113,9 +116,9 @@ title                                                   default: 'Internal'
 subtitle
     Additional text that is displayed below the ATLAS logo. This can be a string or a 
     list of strings, with the latter putting each entry on a new line.
-title_size                                               default: 0.05
+title_size                                              default: 0.05
     ROOT text size for the title.
-text_size                                                default: 0.035
+text_size                                               default: 0.035
     ROOT text size for non-title text, including subtitle and legend.
 
     WARNING ROOT has a bug with measuring text that isn't at some golden sizes. It seems 
@@ -136,11 +139,13 @@ x_range/y_range                                         default: (None, None)
     Specify a list or a tuple of the (min, max) range of the axis to plot. You can set
     either entry to None to automatically fit plot contents. Set the entire argument to
     None to use default ROOT behavior. 
-ydatapad_bot/top                                        default: 0.1
+y_pad_bot/top                                           default: 0.05
     If using an automatic y-axis range, amount of padding at the bottom/top so that the
     data points don't crowd the edges. Also useful to make room for titles and legends.
-    The value is in axis coordinates, so a value of 0.1 on both bottom and top makes the
-    data only appear in the center 80% of the plot. 
+    The value is in axis coordinates, so a value of 0.05 on both bottom and top makes the
+    data only appear in the center 90% of the plot. 
+
+    If [text_pos] is set to 'auto', these options are treated as minimum padding instead.
 x_pad_left/right                                        default: 0
     If using an automatic x-axis range, amount of padding at the left/right so that the
     data points don't crowd the edges. The value is in axis coordinates, so a value of 
@@ -228,7 +233,7 @@ class Plotter:
         text_pos='auto', 
         title_size=0.05, text_size=0.035, text_spacing=1, 
         text_offset_left=0.2, text_offset_right=0.05, text_offset_top=0.1, text_offset_bottom=0.2,
-        y_pad=None, y_pad_bot=0.1, y_pad_top=0.1, 
+        y_pad=None, y_pad_bot=0.05, y_pad_top=0.05, 
         **kwargs
     ):
         ### Pad ###
@@ -758,7 +763,7 @@ class Plotter:
         self._parse_text_pos(min_pad_pos)
 
         ### Adjust y range ###
-        self.y_pad_top = max(0.05, self.pad_to_axes_height(min_pad))
+        self.y_pad_top = max(self.y_pad_top, self.pad_to_axes_height(min_pad))
         self.y_range = self._pad_y_range(**kwargs)
                 
     def _get_required_top_pad(self, data_locs_pad):
