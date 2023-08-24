@@ -225,9 +225,10 @@ class Plotter:
 
     def __init__(self, pad,
         objs=[], opts='', stack=False, 
-        text_pos='topleft', 
+        text_pos='auto', 
         title_size=0.05, text_size=0.035, text_spacing=1, 
         text_offset_left=0.2, text_offset_right=0.05, text_offset_top=0.1, text_offset_bottom=0.2,
+        y_pad=None, y_pad_bot=0.1, y_pad_top=0.1, 
         **kwargs
     ):
         ### Pad ###
@@ -238,18 +239,23 @@ class Plotter:
         self.objs = list(objs)
         self.opts = opts
         self.stack = stack
+        self.frame = None
         self.cache = []
         if stack: self._make_stack()
 
         ### Range parsing ###
+        if y_pad is not None:
+            self.y_pad_bot = y_pad
+            self.y_pad_top = y_pad
+        else:
+            self.y_pad_bot = y_pad_bot
+            self.y_pad_top = y_pad_top
         self.x_range = self._auto_x_range(**kwargs)
         self.y_range = self._auto_y_range(**kwargs)
         self.z_range = self._auto_z_range(**kwargs)
-        if text_pos != 'auto':
-            self.y_range = self._pad_y_range(**kwargs)
 
         ### Object styles ###
-        self._create_frame(**kwargs)
+        self._create_frame(**kwargs) # This needs x_range, but also sets the other ranges
         for i,obj in enumerate(self.objs):
             _apply_common_opts(obj, i, **kwargs)
 
@@ -266,11 +272,11 @@ class Plotter:
         self.text_top = 1 - text_offset_top
         self.text_bottom = text_offset_bottom
 
-        self._make_texts(**kwargs)
+        self._make_titles(**kwargs)
         self._make_legend(**kwargs)
         self._auto_text_pos(**kwargs)
 
-        self._plot()
+        self._draw()
 
     #####################################################################################
     ###                                      PAD                                      ###
@@ -294,18 +300,15 @@ class Plotter:
     def user_to_pad(self, x, y):
         return user_to_pad(self.pad, self.frame, (x, y))
 
-    #####################################################################################
-    ###                                     HISTS                                     ###
-    #####################################################################################
+    def pad_to_axes_height(self, height):
+        return pad_to_axes_height(self.pad, self.frame, height)
 
-    def _make_stack(self):
-        new_objs = []
-        for i,obj in enumerate(self.objs):
-            obj = obj.Clone()
-            if len(new_objs) > 0:
-                obj.Add(new_objs[-1])
-            new_objs.append(obj)
-        self.objs = new_objs
+    def pad_to_axes(self, x, y):
+        return pad_to_axes(self.pad, self.frame, (x, y))
+
+    #####################################################################################
+    ###                                     RANGES                                    ###
+    #####################################################################################
 
     def _auto_x_range(self, x_range=(None, None), x_pad=None, x_pad_left=0, x_pad_right=0, **kwargs):
         if x_range is None: return None
@@ -353,16 +356,18 @@ class Plotter:
                 if at_least_zero: y_min = max(y_min, 0)
         return y_min, y_max
 
-    def _pad_y_range(self, at_least_zero=False, y_pad=None, y_pad_bot=0.1, y_pad_top=0.1, **kwargs):
+    def _pad_y_range(self, at_least_zero=False, **kwargs):
+        '''
+        Updates [self.yrange] with extra padding, if using auto axis limits. Also resets
+        the limits on [self.frame].
+        '''
+        if not self.auto_y_bot and not self.auto_y_top: return
+
         ### Canvas units ###
-        if y_pad is not None:
-            y_pad_bot = y_pad
-            y_pad_top = y_pad
-        data_height = 1.0 - y_pad_bot - y_pad_top
+        data_height = 1.0 - self.y_pad_bot - self.y_pad_top
 
         ### Data units ###
-        y_min = self.data_y_min
-        y_max = self.data_y_max
+        y_min, y_max = self.y_range
         if y_min >= 0: at_least_zero = True # If everything is positive, make sure that the y_min is at least 0
 
         ### Adjust for log ###
@@ -373,11 +378,11 @@ class Plotter:
 
         ### Calculate padding ###
         diff = y_max - y_min
-        if self.auto_y_bot: y_min -= y_pad_bot * diff / data_height
+        if self.auto_y_bot: y_min -= self.y_pad_bot * diff / data_height
         if at_least_zero and y_min < 0:
             y_min = 0
             diff = y_max
-        if self.auto_y_top: y_max += y_pad_top * diff / data_height
+        if self.auto_y_top: y_max += self.y_pad_top * diff / data_height
         
         ### Undo log ###
         if self.logy:
@@ -386,7 +391,9 @@ class Plotter:
         else:
             y_min, y_max = self._fix_bad_yticks(y_min, y_max, at_least_zero, **kwargs)
 
-        return y_min, y_max
+        self.y_range = (y_min, y_max)
+        if self.frame:
+            self.frame.GetYaxis().SetRangeUser(*self.y_range)
 
     def _auto_y_range(self, y_range='auto', ignore_outliers_y=0, **kwargs):
         self.data_y_min = None
@@ -434,6 +441,20 @@ class Plotter:
         if z_range[1] is not None: max_val = z_range[1]
         return (min_val, max_val)
 
+
+    #####################################################################################
+    ###                                     HISTS                                     ###
+    #####################################################################################
+
+    def _make_stack(self):
+        new_objs = []
+        for i,obj in enumerate(self.objs):
+            obj = obj.Clone()
+            if len(new_objs) > 0:
+                obj.Add(new_objs[-1])
+            new_objs.append(obj)
+        self.objs = new_objs
+
     def _create_frame(self, **kwargs):
         if self.x_range and self.y_range:
             self.frame = ROOT.TH1F('h_frame', '', 1, *self.x_range)
@@ -472,7 +493,7 @@ class Plotter:
 
     def _create_title(self, y, title):
         '''
-        Creates the title text and appends it to [self.texts]. Custom treament for the
+        Creates the title text and appends it to [self.title_lines]. Custom treament for the
         ATLAS logo.
 
         @param y
@@ -502,23 +523,23 @@ class Plotter:
             height = tex.GetYsize()
 
         y += height
-        self.texts.append((y, texts))
+        self.title_lines.append((y, texts))
         return y
 
-    def _make_texts(self, title='ATLAS Internal', subtitle=None, **kwargs):
+    def _make_titles(self, title='ATLAS Internal', subtitle=None, **kwargs):
         '''
         Creates all title and subtitle text, and places them relative to their bounding
         box. All text is aligned bottom, i.e. the y coordinate is the baseline.
 
         @sets
-            self.texts          
+            self.title_lines          
                 List of lines, where each line is a pair (y, texts) and `texts` is a list
                 of pairs (x, ROOT.TLatex). The x and y are offsets from the top-left of 
                 the text bounding box, referring to the left edge and baseline, assuming 
                 top-left alignment.
-            self.texts_height
+            self.title_height
         '''
-        self.texts = [] 
+        self.title_lines = [] 
         y = 0 # running offset (downwards) from top-left of all text
 
         if title:
@@ -538,9 +559,9 @@ class Plotter:
                 tex.SetTextSize(self.text_size)
                 tex.SetTextAlign(ROOT.kVAlignBottom + ROOT.kHAlignLeft)
 
-                self.texts.append([y, [[0, tex]]])
+                self.title_lines.append([y, [[0, tex]]])
 
-        self.texts_height = y
+        self.title_height = y
 
     def _get_line_width(self, line):
         '''
@@ -552,13 +573,16 @@ class Plotter:
         x_end = line[-1][0] + line[-1][1].GetXsize() # right edge of last text
         return x_end - x_start
     
-    def _draw_texts(self, x0, y0, align):
+    def _place_titles(self, x0, y0, align):
         '''
-        @param y0 top edge of the texts
         @param x0 left or right edge of the texts, depending on [align]
+        @param y0 top edge of the texts
         @param align either 'left' or 'right'
+        @sets self.titles
+            A list of ROOT.TLatex with coordinates set
         '''
-        for line in self.texts:
+        self.titles = []
+        for line in self.title_lines:
             y = y0 - line[0]
             line_width = self._get_line_width(line[1])
             for x_offset,tex in line[1]:
@@ -568,7 +592,7 @@ class Plotter:
                     x = x0 - line_width + x_offset
                 tex.SetX(x)
                 tex.SetY(y)
-                tex.Draw()
+                self.titles.append(tex)
 
 
     #####################################################################################
@@ -668,7 +692,7 @@ class Plotter:
         for i in legend_items:
             self.legend.AddEntry(*i)
 
-    def _draw_legend(self, x, y, align):
+    def _place_legend(self, x, y, align):
         '''
         @param y top edge of the legend
         @param x left or right edge of the legend, depending on [align]
@@ -685,7 +709,6 @@ class Plotter:
         self.legend.SetX2(x + self.legend_width)
         self.legend.SetY1(y - self.legend_height)
         self.legend.SetY2(y)
-        self.legend.Draw()
 
 
     #####################################################################################
@@ -694,21 +717,61 @@ class Plotter:
 
     def _auto_text_pos(self, **kwargs):
         '''
-        Returns the best 'text_pos' to not overlap text with the plot. Will also adjust
-        the yrange if applicable.
+        Returns the best 'text_pos' to not overlap text with the plot. Places the text, 
+        and will also adjust the yrange if applicable.
         '''
+        if self.text_pos == 'auto': 
+            if 'TH2' in self.objs[0].ClassName() or not self.auto_y_top:
+                self.text_pos = 'topleft'
         if self.text_pos != 'auto':
             self._parse_text_pos(self.text_pos)
+            self.y_range = self._pad_y_range(**kwargs)
             return
 
+        print('hi')
+
+        ### Parse data ###
+        data_locs = {} # dictionary mapping x values to maximum y values, in user coordiantes
+        for obj in self.objs:
+            vals = root_to_list(obj)
+            for x,y,e in vals:
+                val = data_locs.get(x)
+                if val is None or y > val:
+                    data_locs[x] = y
+
+        data_locs_pad = [] # in pad coordiantes
+        for x,y in data_locs.items():
+            data_locs_pad.append(self.user_to_pad(x, y))
+
+        ### Test different textpos ###
         test_pos = ['top', 'top reverse', 'topleft', 'topright'] # list of textpos options to test
-        texts_pos = []
-        legend_pos = []
-        req_pads = [] # top padding necessary to make sure none of the text overlaps data, in pad (NDC) units
+        min_pad = None
+        min_pad_pos = None
 
         for text_pos in test_pos:
             self._parse_text_pos(text_pos)
+            req_pad = self._get_required_top_pad(data_locs_pad)
+            if req_pad == 0: break
+            if min_pad is None or req_pad < min_pad:
+                min_pad = req_pad
+                min_pad_pos = text_pos
 
+        self.text_pos = min_pad_pos
+        self._parse_text_pos(min_pad_pos)
+
+        ### Adjust y range ###
+        self.y_pad_top = self.pad_to_axes_height(min_pad)
+        self.y_range = self._pad_y_range(**kwargs)
+                
+    def _get_required_top_pad(self, data_locs_pad):
+        max_pad = 0
+        for x, y in data_locs_pad:
+            for tex in self.titles:
+                if x > tex.GetX() and x < tex.GetX() + tex.GetXsize():
+                    y_text = tex.GetY()
+                    max_pad = max(max_pad, y - y_text)
+            max_pad = max(max_pad, y - self.legend.GetY1())
+        return max_pad
 
     def _parse_text_pos(self, textpos):
         '''
@@ -754,7 +817,13 @@ class Plotter:
                 self._title_vert_pos = 'top'
                 self._legend_vert_pos = 'bottom'
 
-    def _get_text_and_legend_pos(self):
+        self._place_titles_and_legend()
+
+    def _place_titles_and_legend(self):
+        '''
+        Uses self._(title/legend)_(hori/vert)_pos to place the titles and legend. This
+        sets the ROOT objects' coordinates.
+        '''
         legend_with_title = self._title_hori_pos == self._legend_hori_pos and self._title_vert_pos == self._legend_vert_pos
 
         texts_pos = [0, 0, self._title_hori_pos]
@@ -772,23 +841,23 @@ class Plotter:
         if self._title_vert_pos == 'top':
             texts_pos[1] = self.text_top
         elif legend_with_title:
-            texts_pos[1] = self.text_bottom + self.texts_height + 2 * self.text_spacing + self.legend_height
+            texts_pos[1] = self.text_bottom + self.title_height + 2 * self.text_spacing + self.legend_height
         else:
-            texts_pos[1] = self.text_bottom + self.texts_height
+            texts_pos[1] = self.text_bottom + self.title_height
 
         if self._legend_vert_pos == 'bottom':
             legend_pos[1] = self.text_bottom + self.legend_height
         elif legend_with_title:
-            legend_pos[1] = self.text_top - self.texts_height - 2 * self.text_spacing
+            legend_pos[1] = self.text_top - self.title_height - 2 * self.text_spacing
         else:
             legend_pos[1] = self.text_top
 
-        return texts_pos, legend_pos
+        self._place_titles(*texts_pos)
+        self._place_legend(*legend_pos)
 
     #####################################################################################
-    ###                                     PLOT                                      ###
+    ###                                     DRAW                                      ###
     #####################################################################################
-
 
     def _draw_objs(self):
         it = enumerate(self.objs)
@@ -799,35 +868,32 @@ class Plotter:
             if opt is None: continue
             opt = 'SAME ' + opt 
 
+            ### Custom text format ###
+            # It seems this is the only way to have differing formats per histograms
+            # https://root-forum.cern.ch/t/draw-two-h2d-histograms-on-the-same-pad-as-text-but-in-different-formats/25234/2
             if 'TH2' in obj.ClassName() and 'TEXT:' in opt:
-                # Custom text format. It seems this is the only way to have differing formats per histograms
-                # https://root-forum.cern.ch/t/draw-two-h2d-histograms-on-the-same-pad-as-text-but-in-different-formats/25234/2
                 ex = ROOT.TExec('ex', 'gStyle->SetPaintTextFormat("{}");'.format(opt.split(':')[1]))
                 ex.Draw()
                 self.cache.append(ex)
                 opt = 'TEXT'
 
+            ### Draw ###
             if opt == 'SAME ': opt = 'SAME' # very important that there's no extraneous space here (???)
             obj.Draw(opt)
 
+            ### 2+ joint option ###
             if 'TGraph' in obj.ClassName() and '2+' in opt: # Specify 2+ to draw both error rectangles and bars
                 obj.Draw(opt.replace('2+', ''))
     
-    def _plot(self):
+    def _draw(self):
         if 'TGraph' in self.frame.ClassName():
             self.frame.Draw('A')
         else:
             self.frame.Draw('AXIS')
         self._draw_objs()
 
-        texts_pos, legend_pos = self._get_text_and_legend_pos()
-        self._draw_texts(*texts_pos)
-        self._draw_legend(*legend_pos)
-
-        m = ROOT.TMarker(*self.user_to_pad(0, 0), ROOT.kFullSquare)
-        m.SetNDC()
-        m.Draw()
-        self.cache.append(m)
+        for tex in self.titles: tex.Draw()
+        if self.legend: self.legend.Draw()
 
 
 ### RANGES ###
@@ -1021,6 +1087,36 @@ def user_to_pad(pad, frame, coord):
     '''
     return user_to_pad_x(pad, frame, coord[0]), user_to_pad_y(pad, frame, coord[1])
 
+def pad_to_axes_x(pad, frame, x):
+    '''
+    Transforms a coordiante in pad space (where (0,0) is the bottom-left of the pad) to
+    axes space (where (0,0) is the bottom-right of the axes).
+    '''
+    pad_width = 1 - pad.GetLeftMargin() - pad.GetRightMargin()
+    return (x - pad.GetLeftMargin()) / pad_width
+
+def pad_to_axes_y(pad, frame, y):
+    '''
+    Transforms a coordiante in pad space (where (0,0) is the bottom-left of the pad) to
+    axes space (where (0,0) is the bottom-right of the axes).
+    '''
+    pad_width = 1 - pad.GetTopMargin() - pad.GetBottomMargin()
+    return (y - pad.GetBottomMargin()) / pad_width
+
+def pad_to_axes_height(pad, frame, height):
+    '''
+    Transforms a height in pad space (where (0,0) is the bottom-left of the pad) to
+    axes space (where (0,0) is the bottom-right of the axes).
+    '''
+    pad_width = 1 - pad.GetTopMargin() - pad.GetBottomMargin()
+    return height / pad_width
+
+def pad_to_axes(pad, frame, coord):
+    '''
+    Transforms a coordiante in pad space (where (0,0) is the bottom-left of the pad) to
+    axes space (where (0,0) is the bottom-right of the axes).
+    '''
+    return pad_to_axes_x(pad, frame, coord[0]), pad_to_axes_y(pad, frame, coord[1])
 
 def get_text_size(text, text_size):
     '''
@@ -2231,6 +2327,23 @@ def graph_divide(a, b, errors_a=True, errors_b=True):
 
     return out
 
+
+def root_to_list(obj):
+    if 'TH1' in obj.ClassName() or 'TProfile' in obj.ClassName():
+        n = obj.GetNbinsX()
+        def get(i):
+            return (obj.GetBinCenter(i+1), obj.GetBinContent(i+1), obj.GetBinError(i+1))
+    elif 'TGraph' in obj.ClassName():
+        n = obj.GetN()
+        def get(i):
+            return (obj.GetPointX(i), obj.GetPointY(i), 1)
+    else:
+        raise RuntimeError('root_to_list() unknown class ' + obj.ClassName())
+    
+    out = []
+    for i in range(n):
+        out.append(get(i))
+    return out
 
 ##############################################################################
 ###                                LOGGING                                 ###
