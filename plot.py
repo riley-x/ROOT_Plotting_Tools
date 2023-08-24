@@ -749,7 +749,7 @@ class Plotter:
         ### Test different textpos ###
         test_pos = ['top', 'top reverse', 'topleft', 'topright'] # list of textpos options to test
         min_pad = None
-        min_pad_pos = None
+        min_pad_pos = 'top'
 
         for text_pos in test_pos:
             self._parse_text_pos(text_pos)
