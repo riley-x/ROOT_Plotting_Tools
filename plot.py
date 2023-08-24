@@ -1372,12 +1372,14 @@ def plot_ratio(hists1, hists2, height1=0.7, outlier_arrows=True, hline=None, axe
     kwargs['text_size'] = kwargs.get('text_size', 0.035) / height1
     kwargs.setdefault('text_offset_bottom', 0.07) 
     plotter1 = _plot(pad1, hists1, **kwargs)
+    cache.append(plotter1)
     pad1.RedrawAxis() # Make the tick marks go above any fill
 
     ### Draw ratio plot ###
     args2 = { 'ydivs': 504, 'ignore_outliers_y': 4, 'title': None, 'legend': None }
     args2.update(_copy_ratio_args(kwargs, '2'))
-    plotter2 = _plot(pad2, hists2, do_legend=False, **args2)
+    plotter2 = _plot(pad2, hists2, **args2)
+    cache.append(plotter2)
     pad2.RedrawAxis() # Make the tick marks go above any fill
 
     ### Draw y=1 line ###
