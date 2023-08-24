@@ -245,6 +245,8 @@ class Plotter:
         self.x_range = self._auto_x_range(**kwargs)
         self.y_range = self._auto_y_range(**kwargs)
         self.z_range = self._auto_z_range(**kwargs)
+        if text_pos != 'auto':
+            self.y_range = self._pad_y_range(**kwargs)
 
         ### Object styles ###
         self._create_frame(**kwargs)
@@ -260,12 +262,14 @@ class Plotter:
         self.text_spacing = text_size * text_spacing * 0.15
 
         self.text_left = text_offset_left
-        self.text_right = 1 - self.right_margin - text_offset_right
+        self.text_right = 1 - self.pad.GetRightMargin() - text_offset_right
         self.text_top = 1 - text_offset_top
         self.text_bottom = text_offset_bottom
 
         self._make_texts(**kwargs)
         self._make_legend(**kwargs)
+        self._auto_text_pos(**kwargs)
+
         self._plot()
 
     #####################################################################################
@@ -273,11 +277,7 @@ class Plotter:
     #####################################################################################
 
     def _set_pad_properties(self, logx=None, logy=None, logz=None, right_margin=0.05, **kwargs):
-        self.logx = logx
         self.logy = logy
-        self.logz = logz
-        self.right_margin = right_margin
-
         self.pad.cd()
         if logx is not None: self.pad.SetLogx(logx)
         if logy is not None: self.pad.SetLogy(logy)
@@ -290,6 +290,9 @@ class Plotter:
         #         rightmargin = 0.13
         #     else:
         #         rightmargin = 0.05
+
+    def user_to_pad(self, x, y):
+        return user_to_pad(self.pad, self.frame, (x, y))
 
     #####################################################################################
     ###                                     HISTS                                     ###
@@ -325,7 +328,7 @@ class Plotter:
 
         return (x_min, x_max)
 
-    def _fix_bad_yticks(self, y_min, y_max, y_range, ydivs, at_least_zero):
+    def _fix_bad_yticks(self, y_min, y_max, at_least_zero, ydivs=None, **kwargs):
         '''
         When the number of ydivs is small, ROOT sometimes messes up the y axis ticks. 
         This function tries to fix this by just expanding the axis limits iteratively.
@@ -345,50 +348,73 @@ class Plotter:
                 if not need_fix: break
                     
                 diff = y_max - y_min
-                if y_range[0] is None: y_min -= diff * 0.1
-                if y_range[1] is None: y_max += diff * 0.1
+                if self.auto_y_bot: y_min -= diff * 0.1
+                if self.auto_y_top: y_max += diff * 0.1
                 if at_least_zero: y_min = max(y_min, 0)
         return y_min, y_max
 
-    def _auto_y_range(self, y_range='auto', at_least_zero=False, y_pad=None, y_pad_bot=0.1, y_pad_top=0.1, ignore_outliers_y=0, ydivs=None, **kwargs):
-        if y_range is None: return None
-        if y_range == 'auto':
-            if 'TH2' in self.objs[0].ClassName(): return None
-            else: y_range = (None, None)
-        if y_range[0] is not None and y_range[1] is not None: return y_range
-
+    def _pad_y_range(self, at_least_zero=False, y_pad=None, y_pad_bot=0.1, y_pad_top=0.1, **kwargs):
+        ### Canvas units ###
         if y_pad is not None:
             y_pad_bot = y_pad
             y_pad_top = y_pad
         data_height = 1.0 - y_pad_bot - y_pad_top
-        
-        y_min, y_pos, y_max = get_minmax_y(self.objs, x_range=self.x_range, ignore_outliers_y=ignore_outliers_y)
-        if y_min is None or y_max is None: return
-        if y_range[0] is not None: y_min = y_range[0]
-        if y_range[1] is not None: y_max = y_range[1]
+
+        ### Data units ###
+        y_min = self.data_y_min
+        y_max = self.data_y_max
+        if y_min >= 0: at_least_zero = True # If everything is positive, make sure that the y_min is at least 0
+
+        ### Adjust for log ###
         if self.logy:
-            y_min = y_pos if y_min <= 0 else y_min
+            y_min = self.data_y_pos if y_min <= 0 else y_min
             y_min = np.log10(y_min)
             y_max = np.log10(y_max)
 
-        if y_min >= 0:
-            at_least_zero = True # If everything is positive, make sure that the y_min is at least 0
-
+        ### Calculate padding ###
         diff = y_max - y_min
-        if y_range[0] is None: y_min -= y_pad_bot * diff / data_height
+        if self.auto_y_bot: y_min -= y_pad_bot * diff / data_height
         if at_least_zero and y_min < 0:
             y_min = 0
             diff = y_max
-        if y_range[1] is None: y_max += y_pad_top * diff / data_height
+        if self.auto_y_top: y_max += y_pad_top * diff / data_height
         
-
+        ### Undo log ###
         if self.logy:
             y_min = np.power(10, y_min)
             y_max = np.power(10, y_max)
         else:
-            y_min, y_max = self._fix_bad_yticks(y_min, y_max, y_range, ydivs, at_least_zero)
+            y_min, y_max = self._fix_bad_yticks(y_min, y_max, at_least_zero, **kwargs)
 
         return y_min, y_max
+
+    def _auto_y_range(self, y_range='auto', ignore_outliers_y=0, **kwargs):
+        self.data_y_min = None
+        self.data_y_max = None
+        self.data_y_pos = None
+        self.auto_y_bot = False
+        self.auto_y_top = False
+
+        ### No auto range ###
+        if y_range is None: return None
+        if 'TH2' in self.objs[0].ClassName(): return None
+        
+        ### Set tracking members ###
+        if y_range == 'auto': y_range = (None, None)
+        self.data_y_min = y_range[0]
+        self.data_y_max = y_range[1]
+        self.auto_y_bot = y_range[0] is None
+        self.auto_y_top = y_range[1] is None
+        if not self.auto_y_bot and not self.auto_y_top: # short circuit
+            return y_range
+
+        ### Get data min/max ###
+        y_min, y_pos, y_max = get_minmax_y(self.objs, x_range=self.x_range, ignore_outliers_y=ignore_outliers_y)
+        if y_min is None or y_max is None: return None
+        if self.auto_y_bot: self.data_y_min = y_min
+        if self.auto_y_top: self.data_y_max = y_max
+        self.data_y_pos = y_pos
+        return self.data_y_min, self.data_y_max
         
     def _auto_z_range(self, z_range=None, **kwargs):
         if z_range is None: return None
@@ -411,6 +437,7 @@ class Plotter:
     def _create_frame(self, **kwargs):
         if self.x_range and self.y_range:
             self.frame = ROOT.TH1F('h_frame', '', 1, *self.x_range)
+            self.frame.SetDirectory(0)
         else: # use objs[0] as the frame to preserve default ROOT behavior 
             self.frame = self.objs[0].Clone()
             if self.x_range is not None:
@@ -432,7 +459,7 @@ class Plotter:
 
 
     #####################################################################################
-    ###                                     TEXT                                      ###
+    ###                                    TITLES                                     ###
     #####################################################################################
 
     def _create_atlas_title(self):
@@ -661,76 +688,107 @@ class Plotter:
         self.legend.Draw()
 
 
-
     #####################################################################################
-    ###                                     PLOT                                      ###
+    ###                                    TEXTPOS                                    ###
     #####################################################################################
 
-    def _get_text_and_legend_pos(self):
-        textpos = self.text_pos
+    def _auto_text_pos(self, **kwargs):
+        '''
+        Returns the best 'text_pos' to not overlap text with the plot. Will also adjust
+        the yrange if applicable.
+        '''
+        if self.text_pos != 'auto':
+            self._parse_text_pos(self.text_pos)
+            return
+
+        test_pos = ['top', 'top reverse', 'topleft', 'topright'] # list of textpos options to test
+        texts_pos = []
+        legend_pos = []
+        req_pads = [] # top padding necessary to make sure none of the text overlaps data, in pad (NDC) units
+
+        for text_pos in test_pos:
+            self._parse_text_pos(text_pos)
+
+
+    def _parse_text_pos(self, textpos):
+        '''
+        Parses [textpos] to determine the quadrant of the title text and legend.
+
+        @sets
+            self._title_hori_pos
+            self._title_vert_pos
+            self._legend_hori_pos
+            self._legend_vert_pos
+        '''
         if 'left' in textpos:
-            _title_hori_pos = 'left'
-            _legend_hori_pos = 'left'
+            self._title_hori_pos = 'left'
+            self._legend_hori_pos = 'left'
         elif 'right' in textpos:
-            _title_hori_pos = 'right'
-            _legend_hori_pos = 'right'
+            self._title_hori_pos = 'right'
+            self._legend_hori_pos = 'right'
         elif 'reverse' in textpos:
-            _title_hori_pos = 'right'
-            _legend_hori_pos = 'left'
+            self._title_hori_pos = 'right'
+            self._legend_hori_pos = 'left'
         else:
-            _title_hori_pos = 'left'
-            _legend_hori_pos = 'right'
+            self._title_hori_pos = 'left'
+            self._legend_hori_pos = 'right'
             
         if 'top' in textpos:
-            _title_vert_pos = 'top'
-            _legend_vert_pos = 'top'
+            self._title_vert_pos = 'top'
+            self._legend_vert_pos = 'top'
         elif 'bottom' in textpos:
-            _title_vert_pos = 'bottom'
-            _legend_vert_pos = 'bottom'
+            self._title_vert_pos = 'bottom'
+            self._legend_vert_pos = 'bottom'
         elif 'forward diagonal' in textpos:
             if 'reverse' in textpos:
-                _title_vert_pos = 'top'
-                _legend_vert_pos = 'bottom'
+                self._title_vert_pos = 'top'
+                self._legend_vert_pos = 'bottom'
             else:
-                _title_vert_pos = 'bottom'
-                _legend_vert_pos = 'top'
+                self._title_vert_pos = 'bottom'
+                self._legend_vert_pos = 'top'
         else:
             if 'reverse' in textpos:
-                _title_vert_pos = 'bottom'
-                _legend_vert_pos = 'top'
+                self._title_vert_pos = 'bottom'
+                self._legend_vert_pos = 'top'
             else:
-                _title_vert_pos = 'top'
-                _legend_vert_pos = 'bottom'
+                self._title_vert_pos = 'top'
+                self._legend_vert_pos = 'bottom'
 
-        _legend_with_title = _title_hori_pos == _legend_hori_pos and _title_vert_pos == _legend_vert_pos
+    def _get_text_and_legend_pos(self):
+        legend_with_title = self._title_hori_pos == self._legend_hori_pos and self._title_vert_pos == self._legend_vert_pos
 
-        texts_pos = [0, 0, _title_hori_pos]
-        legend_pos = [0, 0, _legend_hori_pos]
-        if _title_hori_pos == 'left':
+        texts_pos = [0, 0, self._title_hori_pos]
+        legend_pos = [0, 0, self._legend_hori_pos]
+        if self._title_hori_pos == 'left':
             texts_pos[0] = self.text_left
         else:
             texts_pos[0] = self.text_right
 
-        if _legend_hori_pos == 'left':
+        if self._legend_hori_pos == 'left':
             legend_pos[0] = self.text_left
         else:
             legend_pos[0] = self.text_right
 
-        if _title_vert_pos == 'top':
+        if self._title_vert_pos == 'top':
             texts_pos[1] = self.text_top
-        elif _legend_with_title:
+        elif legend_with_title:
             texts_pos[1] = self.text_bottom + self.texts_height + 2 * self.text_spacing + self.legend_height
         else:
             texts_pos[1] = self.text_bottom + self.texts_height
 
-        if _legend_vert_pos == 'bottom':
+        if self._legend_vert_pos == 'bottom':
             legend_pos[1] = self.text_bottom + self.legend_height
-        elif _legend_with_title:
+        elif legend_with_title:
             legend_pos[1] = self.text_top - self.texts_height - 2 * self.text_spacing
         else:
             legend_pos[1] = self.text_top
 
         return texts_pos, legend_pos
+
+    #####################################################################################
+    ###                                     PLOT                                      ###
+    #####################################################################################
+
 
     def _draw_objs(self):
         it = enumerate(self.objs)
@@ -765,6 +823,11 @@ class Plotter:
         texts_pos, legend_pos = self._get_text_and_legend_pos()
         self._draw_texts(*texts_pos)
         self._draw_legend(*legend_pos)
+
+        m = ROOT.TMarker(*self.user_to_pad(0, 0), ROOT.kFullSquare)
+        m.SetNDC()
+        m.Draw()
+        self.cache.append(m)
 
 
 ### RANGES ###
@@ -931,9 +994,38 @@ def _apply_frame_opts(obj, **kwargs):
         obj.GetZaxis().SetNdivisions(x, True)
 
 
-### MISC ###
+### SIZING ###
+
+def user_to_pad_x(pad, frame, x):
+    '''
+    Transforms a coordiante in user space (i.e. x and y values) to pad space (what ROOT 
+    calls NDC, where (0,0) is the bottom-left of the canvas and (1,1) is the top-right).
+    '''
+    user_width = frame.GetXaxis().GetXmax() - frame.GetXaxis().GetXmin()
+    pad_width = 1 - pad.GetLeftMargin() - pad.GetRightMargin()
+    return (x - frame.GetXaxis().GetXmin()) / user_width * pad_width + pad.GetLeftMargin()
+
+def user_to_pad_y(pad, frame, y):
+    '''
+    Transforms a coordiante in user space (i.e. x and y values) to pad space (what ROOT 
+    calls NDC, where (0,0) is the bottom-left of the canvas and (1,1) is the top-right).
+    '''
+    user_width = frame.GetMaximum() - frame.GetMinimum()
+    pad_width = 1 - pad.GetTopMargin() - pad.GetBottomMargin()
+    return (y - frame.GetMinimum()) / user_width * pad_width + pad.GetBottomMargin()
+
+def user_to_pad(pad, frame, coord):
+    '''
+    Transforms a coordiante in user space (i.e. x and y values) to pad space (what ROOT 
+    calls NDC, where (0,0) is the bottom-left of the canvas and (1,1) is the top-right).
+    '''
+    return user_to_pad_x(pad, frame, coord[0]), user_to_pad_y(pad, frame, coord[1])
+
 
 def get_text_size(text, text_size):
+    '''
+    Returns the size of [text] in NDC (canvas) units.
+    '''
     tex = ROOT.TLatex(0, 0, text)
     tex.SetTextFont(42)
     tex.SetTextSize(text_size)
