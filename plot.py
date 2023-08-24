@@ -742,23 +742,23 @@ class Plotter:
             data_locs_pad.append(self.user_to_pad(x, y))
 
         ### Test different textpos ###
-        test_pos = ['top', 'top reverse', 'topleft', 'topright'][:1] # list of textpos options to test
+        test_pos = ['top', 'top reverse', 'topleft', 'topright'] # list of textpos options to test
         min_pad = None
         min_pad_pos = None
 
         for text_pos in test_pos:
             self._parse_text_pos(text_pos)
             req_pad = self._get_required_top_pad(data_locs_pad)
-            if req_pad == 0: break
             if min_pad is None or req_pad < min_pad:
                 min_pad = req_pad
                 min_pad_pos = text_pos
+                if min_pad == 0: break
 
         self.text_pos = min_pad_pos
         self._parse_text_pos(min_pad_pos)
 
         ### Adjust y range ###
-        self.y_pad_top = self.pad_to_axes_height(min_pad)
+        self.y_pad_top = max(0.05, self.pad_to_axes_height(min_pad))
         self.y_range = self._pad_y_range(**kwargs)
                 
     def _get_required_top_pad(self, data_locs_pad):
@@ -892,7 +892,6 @@ class Plotter:
 
         for tex in self.titles: tex.Draw()
         if self.legend: self.legend.Draw()
-        self.print_titles()
 
 
 ### RANGES ###
