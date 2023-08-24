@@ -279,7 +279,10 @@ class Plotter:
 
         self._make_titles(**kwargs)
         self._make_legend(**kwargs)
-        self._auto_text_pos(**kwargs)
+
+        self._auto_text_pos_and_pad(**kwargs)
+        self._parse_text_pos(self.text_pos)
+        self._pad_y_range(**kwargs)
 
         self._draw()
 
@@ -302,12 +305,18 @@ class Plotter:
         #     else:
         #         rightmargin = 0.05
 
+    def user_to_axes(self, x, y):
+        return user_to_axes(self.pad, self.frame, (x, y))
+
     def user_to_pad(self, x, y):
         return user_to_pad(self.pad, self.frame, (x, y))
 
+    def pad_to_axes_x(self, x):
+        return pad_to_axes_x(self.pad, self.frame, x)
+    def pad_to_axes_y(self, y):
+        return pad_to_axes_y(self.pad, self.frame, y)
     def pad_to_axes_height(self, height):
         return pad_to_axes_height(self.pad, self.frame, height)
-
     def pad_to_axes(self, x, y):
         return pad_to_axes(self.pad, self.frame, (x, y))
 
@@ -366,18 +375,18 @@ class Plotter:
         Updates [self.yrange] with extra padding, if using auto axis limits. Also resets
         the limits on [self.frame].
         '''
-        if not self.auto_y_bot and not self.auto_y_top: return
+        if not self.auto_y_bot and not self.auto_y_top: return 
 
         ### Canvas units ###
         data_height = 1.0 - self.y_pad_bot - self.y_pad_top
 
         ### Data units ###
         y_min, y_max = self.y_range
-        if y_min >= 0: at_least_zero = True # If everything is positive, make sure that the y_min is at least 0
+        if y_min >= 0 and not self.pad.GetLogy(): 
+            at_least_zero = True # If everything is positive, make sure that the y_min is at least 0
 
         ### Adjust for log ###
         if self.logy:
-            y_min = self.data_y_pos if y_min <= 0 else y_min
             y_min = np.log10(y_min)
             y_max = np.log10(y_max)
 
@@ -413,8 +422,6 @@ class Plotter:
         
         ### Set tracking members ###
         if y_range == 'auto': y_range = (None, None)
-        self.data_y_min = y_range[0]
-        self.data_y_max = y_range[1]
         self.auto_y_bot = y_range[0] is None
         self.auto_y_top = y_range[1] is None
         if not self.auto_y_bot and not self.auto_y_top: # short circuit
@@ -422,11 +429,18 @@ class Plotter:
 
         ### Get data min/max ###
         y_min, y_pos, y_max = get_minmax_y(self.objs, x_range=self.x_range, ignore_outliers_y=ignore_outliers_y)
-        if y_min is None or y_max is None: return None
-        if self.auto_y_bot: self.data_y_min = y_min
-        if self.auto_y_top: self.data_y_max = y_max
+        if y_min is None or y_max is None or (y_pos is None and self.pad.GetLogy()): 
+            self.auto_y_bot = False
+            self.auto_y_top = False
+            return None
+        self.data_y_min = y_min
+        self.data_y_max = y_max
         self.data_y_pos = y_pos
-        return self.data_y_min, self.data_y_max
+        
+        if self.pad.GetLogy(): y_min = y_pos
+        if not self.auto_y_bot: y_min = y_range[0]
+        if not self.auto_y_top: y_max = y_range[1]
+        return y_min, y_max
         
     def _auto_z_range(self, z_range=None, **kwargs):
         if z_range is None: return None
@@ -673,6 +687,10 @@ class Plotter:
         legend_items = self._get_legend_list(**kwargs)
         if not legend_items:
             self.legend = None
+            self.legend_height = 0
+            self.legend_width = 0
+            self.legend_rows = 1
+            self.legend_columns = 1
             return
 
         ### Legend size ###
@@ -720,19 +738,32 @@ class Plotter:
     ###                                    TEXTPOS                                    ###
     #####################################################################################
 
-    def _auto_text_pos(self, **kwargs):
-        '''
-        Returns the best 'text_pos' to not overlap text with the plot. Places the text, 
-        and will also adjust the yrange if applicable.
-        '''
-        if self.text_pos == 'auto': 
-            if 'TH2' in self.objs[0].ClassName() or not self.auto_y_top:
-                self.text_pos = 'topleft'
-        if self.text_pos != 'auto' or (not self.title_lines and not self.legend):
-            self._parse_text_pos(self.text_pos)
-            self.y_range = self._pad_y_range(**kwargs)
-            return
+    def has_text(self):
+        return bool(self.title_lines or self.legend)
 
+    def _auto_text_pos_and_pad(self, **kwargs):
+        '''
+        Finds the best 'text_pos' to not overlap text with the plot, and the y_pad_top
+        needed.
+
+        @requires
+            Assumes self.frame has been set with yrange = data range to use the member
+            coordinate conversion functions, and the titles and legend have been created.
+        @sets
+            self.text_pos
+            self.y_pad_top
+
+        Note this function will temporarily place the text items. Make sure to reset if 
+        needed.
+        '''
+        ### No auto ###
+        if self.text_pos == 'auto': 
+            if 'TH2' in self.objs[0].ClassName():
+                self.text_pos = 'topleft'
+        if self.text_pos != 'auto': return
+        if not self.has_text(): return
+        if self.data_y_max == self.data_y_min: return
+        
         ### Parse data ###
         data_locs = {} # dictionary mapping x values to maximum y values, in user coordiantes
         for obj in self.objs:
@@ -742,9 +773,9 @@ class Plotter:
                 if val is None or y > val:
                     data_locs[x] = y
 
-        data_locs_pad = [] # in pad coordiantes
+        data_locs_axes = [] # in axes coordiantes
         for x,y in data_locs.items():
-            data_locs_pad.append(self.user_to_pad(x, y))
+            data_locs_axes.append(self.user_to_axes(x, y))
 
         ### Test different textpos ###
         test_pos = ['top', 'top reverse', 'topleft', 'topright'] # list of textpos options to test
@@ -753,27 +784,46 @@ class Plotter:
 
         for text_pos in test_pos:
             self._parse_text_pos(text_pos)
-            req_pad = self._get_required_top_pad(data_locs_pad)
+            req_pad = self._get_required_top_padding(data_locs_axes)
             if min_pad is None or req_pad < min_pad:
                 min_pad = req_pad
                 min_pad_pos = text_pos
                 if min_pad < self.y_pad_top: break
 
+        ### Set outputs ###
         self.text_pos = min_pad_pos
-        self._parse_text_pos(min_pad_pos)
-
-        ### Adjust y range ###
-        self.y_pad_top = max(self.y_pad_top, self.pad_to_axes_height(min_pad))
-        self.y_range = self._pad_y_range(**kwargs)
+        self.y_pad_top = max(self.y_pad_top, min_pad + 0.02)
                 
-    def _get_required_top_pad(self, data_locs_pad):
+    def _get_required_top_padding(self, data_locs_axes):
+        '''
+        Helper function for [_auto_text_pos_and_pad].
+
+        Returns the necessary top padding to ensure that no text elements overlap the 
+        data. Text should be placed first.
+        '''
+        ### Get text locations ###
+        occlusions = [] # (left, right, bottom) in axes coordinates
+        for tex in self.titles:
+            occlusions.append((
+                self.pad_to_axes_x(tex.GetX()),
+                self.pad_to_axes_x(tex.GetX() + tex.GetXsize()),
+                self.pad_to_axes_y(tex.GetY()), # all text is bottom-aligned
+            ))
+        occlusions.append((
+            self.pad_to_axes_x(self.legend.GetX1()),
+            self.pad_to_axes_x(self.legend.GetX2()),
+            self.pad_to_axes_y(self.legend.GetY1()), 
+        ))
+
+        ### Iterate over data points ###
         max_pad = 0
-        for x, y in data_locs_pad:
-            for tex in self.titles:
-                if x > tex.GetX() and x < tex.GetX() + tex.GetXsize():
-                    max_pad = max(max_pad, y - tex.GetY())
-            if x > self.legend.GetX1() and x < self.legend.GetX2():
-                max_pad = max(max_pad, y - self.legend.GetY1())
+        for x, y in data_locs_axes:
+            for left,right,bottom in occlusions:
+                if x > left and x < right and y > bottom:
+                    # y' = y (1 - pad_top - pad_bot) + pad_bot
+                    # Set y' == bottom and solve for pad_top
+                    pad_req = 1 - self.y_pad_bot - (bottom - self.y_pad_bot) / y
+                    max_pad = max(max_pad, pad_req)
         return max_pad
 
     def _parse_text_pos(self, textpos):
@@ -897,6 +947,19 @@ class Plotter:
 
         for tex in self.titles: tex.Draw()
         if self.legend: self.legend.Draw()
+
+    def draw_marker(x, y, axes_units=False):
+        '''
+        @param axes - If true x and y are in axes units, otherwise they are in user units
+        '''
+        if axes_units:
+            x, y = self.axes_to_pad(x, y)
+            m = ROOT.TMarker(x, y, ROOT.kFullSquare)
+            m.SetNDC()
+        else:
+            m = ROOT.TMarker(x, y, ROOT.kFullSquare)
+        m.Draw()
+        self.cache.append(m)
 
 
 ### RANGES ###
@@ -1063,67 +1126,77 @@ def _apply_frame_opts(obj, **kwargs):
         obj.GetZaxis().SetNdivisions(x, True)
 
 
-### SIZING ###
+##############################################################################
+###                            PLOT COORDINATES                            ###
+##############################################################################
+
+'''
+These functions convert coordinates between various coordinate systems:
+
+1. User (Data)
+    This is the actual data values. So for example if you are plotting a m(X) histogram 
+    the x coordinates are in GeV and the y coordinates are in number of events.
+2. Axes
+    This ranges from (0,0) at the bottom-left of the axes to (1,1) at the top-right.
+3. Pad (NDC)
+    ROOT calls this NDC. It ranges from (0,0) at the bottom-left of the pad to (1,1) at
+    the top-right.
+
+The functions require you to pass a pad (a ROOT.TPad, which is inherited by ROOT.TCanvas)
+and a frame histogram. The frame is usually the first histogram/graph plotted, and the
+one that determines axis ranges and titles. This can be accessed from the [Plotter] class
+with member `plotter.frame`.
+'''
+
+def user_to_axes_x(pad, frame, x):
+    user_width = frame.GetXaxis().GetXmax() - frame.GetXaxis().GetXmin()
+    return (x - frame.GetXaxis().GetXmin()) / user_width
+def user_to_axes_y(pad, frame, y):
+    if pad.GetLogy(): 
+        if y <= 0: return 0
+        y = np.log10(y)
+        fmin = np.log10(frame.GetMinimum())
+        fmax = np.log10(frame.GetMaximum())
+    else:
+        fmin = frame.GetMinimum()
+        fmax = frame.GetMaximum()
+    user_width = fmax - fmin
+    return (y - fmin) / user_width
+def user_to_axes(pad, frame, coord):
+    return user_to_axes_x(pad, frame, coord[0]), user_to_axes_y(pad, frame, coord[1])
+
+def axes_to_pad_x(pad, frame, x):
+    pad_width = 1 - pad.GetLeftMargin() - pad.GetRightMargin()
+    return x * pad_width + pad.GetLeftMargin()
+def axes_to_pad_y(pad, frame, y):
+    pad_height = 1 - pad.GetTopMargin() - pad.GetBottomMargin()
+    return y * pad_height + pad.GetBottomMargin()
+def axes_to_pad(pad, frame, coord):
+    return axes_to_pad_x(pad, frame, coord[0]), axes_to_pad_y(pad, frame, coord[1])
 
 def user_to_pad_x(pad, frame, x):
-    '''
-    Transforms a coordiante in user space (i.e. x and y values) to pad space (what ROOT 
-    calls NDC, where (0,0) is the bottom-left of the canvas and (1,1) is the top-right).
-    '''
-    user_width = frame.GetXaxis().GetXmax() - frame.GetXaxis().GetXmin()
-    pad_width = 1 - pad.GetLeftMargin() - pad.GetRightMargin()
-    return (x - frame.GetXaxis().GetXmin()) / user_width * pad_width + pad.GetLeftMargin()
-
+    return axes_to_pad_x(pad, frame, user_to_axes_x(frame, x))
 def user_to_pad_y(pad, frame, y):
-    '''
-    Transforms a coordiante in user space (i.e. x and y values) to pad space (what ROOT 
-    calls NDC, where (0,0) is the bottom-left of the canvas and (1,1) is the top-right).
-    '''
-    user_width = frame.GetMaximum() - frame.GetMinimum()
-    pad_width = 1 - pad.GetTopMargin() - pad.GetBottomMargin()
-    return (y - frame.GetMinimum()) / user_width * pad_width + pad.GetBottomMargin()
-
+    return axes_to_pad_y(pad, frame, user_to_axes_y(frame, y))
 def user_to_pad(pad, frame, coord):
-    '''
-    Transforms a coordiante in user space (i.e. x and y values) to pad space (what ROOT 
-    calls NDC, where (0,0) is the bottom-left of the canvas and (1,1) is the top-right).
-    '''
     return user_to_pad_x(pad, frame, coord[0]), user_to_pad_y(pad, frame, coord[1])
 
 def pad_to_axes_x(pad, frame, x):
-    '''
-    Transforms a coordiante in pad space (where (0,0) is the bottom-left of the pad) to
-    axes space (where (0,0) is the bottom-right of the axes).
-    '''
     pad_width = 1 - pad.GetLeftMargin() - pad.GetRightMargin()
     return (x - pad.GetLeftMargin()) / pad_width
-
 def pad_to_axes_y(pad, frame, y):
-    '''
-    Transforms a coordiante in pad space (where (0,0) is the bottom-left of the pad) to
-    axes space (where (0,0) is the bottom-right of the axes).
-    '''
-    pad_width = 1 - pad.GetTopMargin() - pad.GetBottomMargin()
-    return (y - pad.GetBottomMargin()) / pad_width
-
+    pad_height = 1 - pad.GetTopMargin() - pad.GetBottomMargin()
+    return (y - pad.GetBottomMargin()) / pad_height
 def pad_to_axes_height(pad, frame, height):
-    '''
-    Transforms a height in pad space (where (0,0) is the bottom-left of the pad) to
-    axes space (where (0,0) is the bottom-right of the axes).
-    '''
-    pad_width = 1 - pad.GetTopMargin() - pad.GetBottomMargin()
-    return height / pad_width
-
+    pad_height = 1 - pad.GetTopMargin() - pad.GetBottomMargin()
+    return height / pad_height
 def pad_to_axes(pad, frame, coord):
-    '''
-    Transforms a coordiante in pad space (where (0,0) is the bottom-left of the pad) to
-    axes space (where (0,0) is the bottom-right of the axes).
-    '''
     return pad_to_axes_x(pad, frame, coord[0]), pad_to_axes_y(pad, frame, coord[1])
+
 
 def get_text_size(text, text_size):
     '''
-    Returns the size of [text] in NDC (canvas) units.
+    Returns the size of [text] in pad (NDC) units.
     '''
     tex = ROOT.TLatex(0, 0, text)
     tex.SetTextFont(42)
@@ -1132,7 +1205,10 @@ def get_text_size(text, text_size):
 
 
 
-### WRAPPERS ###
+##############################################################################
+###                            CANVAS WRAPPERS                             ###
+##############################################################################
+
 
 def _plot(c, objs,
     canvas_callback=None, frame_callback=None,
@@ -1150,6 +1226,7 @@ def _plot(c, objs,
     if frame_callback: 
         plotter.cache.append(frame_callback(plotter.frame))
     return plotter
+
 
 def _outliers(frame, hists):
     '''
@@ -1177,11 +1254,6 @@ def _outliers(frame, hists):
                 markers.append(m)
 
     return markers
-
-
-##############################################################################
-###                            CANVAS WRAPPERS                             ###
-##############################################################################
 
 
 def plot(objs, canvas_size=(1000,800), canvas_name='c1', **kwargs):
@@ -1742,6 +1814,8 @@ def plot_discrete_bins(hists1, hists2=None, hists3=None, plotter=plot, bin_width
     if hists2: pos_args.append(hists2)
     if hists3: pos_args.append(hists3)
     plotter(*pos_args, **kwargs)
+
+
 
 ##############################################################################
 ###                                COLORS                                  ###
