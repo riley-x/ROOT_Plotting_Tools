@@ -16,7 +16,7 @@ def basic_plot():
     plot.plot(histograms.hists_mj_samples,
         filename='basic_plot',
         ### Text ###
-        title='ATLAS Simulation',
+        title='ATLAS Dummy',
         subtitle='#sqrt{s}=13 TeV, 139 fb^{-1}',
         legend=['Diboson', 'Single Top', 't#bar{t}', 'W+jets'],
         ytitle='Events',
@@ -32,5 +32,4 @@ def basic_plot():
 
 if __name__ == "__main__":
     plot.save_transparent = False
-    plot.file_formats = ['png', 'pdf']
     basic_plot()

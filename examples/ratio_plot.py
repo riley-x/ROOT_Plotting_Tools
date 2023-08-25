@@ -36,7 +36,7 @@ def ratio_plot():
     plot.plot_ratio(hists, ratios,
         filename='ratio_plot',
         ### Text ###
-        title='ATLAS Simulation',
+        title='ATLAS Dummy',
         subtitle='#sqrt{s}=13 TeV, 139 fb^{-1}',
         legend=legend,
         ytitle='Events',

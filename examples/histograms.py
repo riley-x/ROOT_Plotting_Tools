@@ -1,10 +1,46 @@
 '''
 Some preset histograms used in the example scripts.
 
+- hists_mVV_vjetsfit: 3 histograms of m(VV), [MC, MLE, p(f)]
 - hists_mV_unfolding: 4 histograms of pT(V), [diboson fid, diboson int, cW fid, cW int]
 - hists_mj_samples: 4 histograms of pT(J), [diboson, stop, ttbar, wjets]
 '''
 import ROOT
+import numpy as np
+
+
+bins = np.array([500., 550, 600, 650, 700, 750, 800, 900, 1000, 1200, 1800, 3000])
+
+hists_mVV_vjetsfit_mc = ROOT.TH1F('hists_mVV_vjetsfit_mc', '', len(bins) - 1, bins)
+vals = [2.123957, 7.475844, 15.70637, 18.1931, 15.73302, 13.16379, 8.890716, 4.56903, 2.114507, 0.3458206, 0.01381942]
+errs = [0.1168195, 0.2607041, 0.6017085, 0.6024235, 0.4239284, 0.4791286, 0.2090752, 0.3050563, 0.06128837, 0.01718785, 0.001275155]
+for i,(v,e) in enumerate(zip(vals, errs)):
+    hists_mVV_vjetsfit_mc.SetBinContent(i+1, v)
+    hists_mVV_vjetsfit_mc.SetBinError(i+1, e)
+
+hists_mVV_vjetsfit_mle = ROOT.TH1F('hists_mVV_vjetsfit_mle', '', len(bins) - 1, bins)
+vals = [2.105904, 7.74831, 16.80613, 18.14824, 17.2492, 13.46212, 9.029691, 4.78132, 2.136507, 0.3482589, 0.01198888]
+errs = [0.1825454, 0.3326361, 0.5124832, 0.7708528, 0.4981895, 0.4099032, 0.2279366, 0.1625228, 0.08690935, 0.01803914, 0.002300117]
+for i,(v,e) in enumerate(zip(vals, errs)):
+    hists_mVV_vjetsfit_mle.SetBinContent(i+1, v)
+    hists_mVV_vjetsfit_mle.SetBinError(i+1, e)
+
+hists_mVV_vjetsfit_pf = ROOT.TH1F('hists_mVV_vjetsfit_pf', '', len(bins) - 1, bins)
+vals = [2.06661, 7.677692, 16.7587, 18.50239, 17.13326, 13.38758, 9.024076, 4.774637, 2.137767, 0.3461665, 0.01126283]
+errs = [0.203365, 0.3705489, 0.5997595, 0.9927753, 0.6060573, 0.4945361, 0.2616089, 0.175942, 0.09692905, 0.0196789, 0.002889645]
+for i,(v,e) in enumerate(zip(vals, errs)):
+    hists_mVV_vjetsfit_pf.SetBinContent(i+1, v)
+    hists_mVV_vjetsfit_pf.SetBinError(i+1, e)
+
+
+hists_mVV_vjetsfit = [
+    hists_mVV_vjetsfit_mc,
+    hists_mVV_vjetsfit_mle,
+    hists_mVV_vjetsfit_pf,
+]
+
+
+
 
 hists_mV_unfolding_diboson_fid = ROOT.TH1F("WW_fid_full_ann_truth_vhad_pt__12","",75,0,3000)
 hists_mV_unfolding_diboson_fid.SetBinContent(1,382.9375)

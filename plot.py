@@ -1315,17 +1315,15 @@ def _fix_axis_sizing(h, pad, remove_x_labels=False, xlabeloffset=0.005, xlabelsi
     # Note there seems to be a minimum tick length for the y axis...
 
 
-def _draw_horizontal_line(pos, h, xrange):
+def _draw_horizontal_line(pos, frame):
     # TODO this will still draw the line out of the axes if pos is not in yrange
-    if pos is not None:
-        if xrange:
-            # make sure xrange is a list if it has None elements
-            line = ROOT.TLine(xrange[0], pos, xrange[1], pos)
-        else:
-            line = ROOT.TLine(h.GetXaxis().GetXmin(), pos, h.GetXaxis().GetXmax(), pos)
-        line.SetLineStyle(ROOT.kDashed)
-        line.Draw()
-        return line
+    if pos is None: return
+    x_min = frame.GetXaxis().GetXmin()
+    x_max = frame.GetXaxis().GetXmax()
+    line = ROOT.TLine(x_min, pos, x_max, pos)
+    line.SetLineStyle(ROOT.kDashed)
+    line.Draw()
+    return line
 
 
 def plot_ratio(hists1, hists2, height1=0.7, outlier_arrows=True, hline=None, axes_callback=None, save_plot=True, **kwargs):
@@ -1376,7 +1374,7 @@ def plot_ratio(hists1, hists2, height1=0.7, outlier_arrows=True, hline=None, axe
     pad2.RedrawAxis() # Make the tick marks go above any fill
 
     ### Draw y=1 line ###
-    cache.append(_draw_horizontal_line(hline, hists2[0], kwargs.get('xrange')))
+    cache.append(_draw_horizontal_line(hline, plotter2.frame))
     
     ### Fix axes sizing ### 
     _fix_axis_sizing(plotter1.frame, pad1, True)
@@ -1433,36 +1431,51 @@ def plot_ratio3(hists1, hists2, hists3, height1=0.55, outlier_arrows=True, hline
     pad3.Draw()
 
     ### Draw main histo ###
-    titlesize = kwargs.get('titlesize', 0.05)
-    kwargs['titlesize'] = titlesize / height1
-    # kwargs['yrange'] = list(kwargs.get('yrange', [None, None]))
+    titlesize = kwargs.get('title_size', 0.05)
+    textsize = kwargs.get('text_size', 0.035)
+    kwargs['title_size'] = titlesize / height1
+    kwargs['text_size'] = textsize / height1
     kwargs.setdefault('text_offset_bottom', 0.1 * (1 - height1)) # guess
     plotter1 = _plot(pad1, hists1, **kwargs)
     cache.append(plotter1)
     pad1.RedrawAxis() # Make the tick marks go above any fill
 
     ### Draw first ratio plot
-    args2 = { 'ydivs': 204, 'ignore_outliers_y': 3, 'title': None, 'legend': None, 'titlesize': titlesize / height2 }
+    args2 = { 
+        'ydivs': 204, 
+        'ignore_outliers_y': 3, 
+        'title': None, 
+        'legend': None, 
+        'titlesize': titlesize / height2,
+        'textsize': textsize / height2,
+    }
     args2.update(_copy_ratio_args(kwargs, '2'))
     plotter2 = _plot(pad2, hists2, do_legend=False, **args2)
     cache.append(plotter2)
     pad2.RedrawAxis() # Make the tick marks go above any fill
 
     ### Draw y=1 line ###
-    cache.append(_draw_horizontal_line(hline2, hists2[0], kwargs.get('xrange')))
+    cache.append(_draw_horizontal_line(hline2, plotter1.frame))
 
     ### Draw out-of-bounds arrows ###
     if outlier_arrows: cache.append(_outliers(plotter2.frame, hists2))
 
     ### Draw second ratio plot
-    args3 = { 'ydivs': 204, 'ignore_outliers_y': 3, 'title': None, 'legend': None, 'titlesize': titlesize / height3, 'text_offset_bottom': 0.15 / height3 }
+    args3 = { 
+        'ydivs': 204, 
+        'ignore_outliers_y': 3, 
+        'title': None, 
+        'legend': None, 
+        'titlesize': titlesize / height3,
+        'textsize': textsize / height3,
+    }
     args3.update(_copy_ratio_args(kwargs, '3'))
     plotter3 = _plot(pad3, hists3, do_legend=False, **args3)
     cache.append(plotter3)
     pad3.RedrawAxis() # Make the tick marks go above any fill
 
     ### Draw y=1 line ###
-    cache.append(_draw_horizontal_line(hline3, hists3[0], kwargs.get('xrange')))
+    cache.append(_draw_horizontal_line(hline3, plotter1.frame))
 
     ### Draw out-of-bounds arrows ###
     if outlier_arrows: cache.append(_outliers(plotter3.frame, hists3))
@@ -1741,7 +1754,8 @@ def plot_discrete_bins(hists1, hists2=None, hists3=None, plotter=plot, bin_width
     else:
         bin_start = None # these are 0-indexed
         bin_end = None # exclusive
-        xrange = _auto_xrange(hists1, **kwargs)
+        # xrange = _auto_xrange(hists1, **kwargs) # TODO
+        xrange = None
         h_check = hists1[0]
         if xrange is None:
             bin_start = 0
@@ -1755,9 +1769,6 @@ def plot_discrete_bins(hists1, hists2=None, hists3=None, plotter=plot, bin_width
                     break
         nbins = bin_end - bin_start
         if nbins < 1: raise RuntimeError(f'plot_equiwidth_bins() nbins < 1: nbins={nbins}, xrange={xrange}')
-
-    ### Create frame histogram ###
-    h_frame = ROOT.TH1D(hists1[0].GetName() + '_frame', '', nbins, 0, nbins)
 
     ### Adjust labels of x axis ###
     arg_name = 'frame_callback' + ('3' if hists3 else '2' if hists2 else '')
@@ -1786,10 +1797,12 @@ def plot_discrete_bins(hists1, hists2=None, hists3=None, plotter=plot, bin_width
                 v = obj.GetBinContent(bin_start + i + 1)
                 e_low = obj.GetBinError(bin_start + i + 1)
                 e_high = e_low
-            elif 'TGraph' in obj.ClassName():
+            elif 'TGraphAsymmErrors' in obj.ClassName():
                 v = obj.GetPointY(bin_start + i)
                 e_low = obj.GetErrorYlow(bin_start + i)
                 e_high = obj.GetErrorYhigh(bin_start + i)
+            else:
+                raise NotImplementedError(f'plot_discrete_bins() class {obj.ClassName()}')
             g.SetPoint(i, i + x, v)
             g.SetPointError(i, width / 2, width / 2, e_low, e_high)
 
@@ -1807,7 +1820,7 @@ def plot_discrete_bins(hists1, hists2=None, hists3=None, plotter=plot, bin_width
     def convert_objs(objs):
         if objs is None: return None
         out = [create_graph(obj, i, len(objs)) for i,obj in enumerate(objs)]
-        return [h_frame.Clone()] + out
+        return out
 
     hists1 = convert_objs(hists1)
     hists2 = convert_objs(hists2)
@@ -1815,10 +1828,7 @@ def plot_discrete_bins(hists1, hists2=None, hists3=None, plotter=plot, bin_width
 
     ### Fix args ###
     kwargs['xdivs'] = -nbins
-    kwargs['xrange'] = (0, nbins)
-    kwargs['frame_histogram'] = True
-    kwargs['frame_histogram2'] = True
-    kwargs['frame_histogram3'] = True
+    kwargs['x_range'] = (0, nbins)
 
     ### Plot ###
     pos_args = [hists1]
