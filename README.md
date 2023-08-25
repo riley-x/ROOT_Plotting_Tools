@@ -60,9 +60,15 @@ or rebinning a 2D histogram with variable bins.
 <img src="./examples/basic_plot.png" style="max-height: 3in">
 
 
-### Ratios
+### Ratio Plot
 
 [Source](./examples/ratio_plot.py). Example with more complicated formatting and legend, with a ratio subplot.
 
-
 <img src="./examples/ratio_plot.png" style="max-height: 3in">
+
+
+### Discrete Plot
+
+[Source](./examples/discrete_plot.py). This script showcases both `plot_discrete_bins()`, which plots histograms discretized in equal-width bins, and `plot_ratio3()`, which adds two subplots beneath the main plot.
+
+<img src="./examples/discrete_plot.png" style="max-height: 3in">

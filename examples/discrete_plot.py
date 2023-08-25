@@ -5,6 +5,9 @@ Run this file with
 
     python3 examples/discrete_plot.py
 
+This script showcases both plot.plot_discrete_bins(), which plots histograms discretized
+in equal-width bins, and plot.plot_ratio3(), which adds two subplots beneath the main 
+plot.
 '''
 
 import plot
@@ -24,7 +27,7 @@ def discrete_plot():
         'xtitle':       'm(VV) [GeV]',
     }
 
-    ### Main pad hists ###
+    ### Main pad ###
     for i,h in enumerate(hists): # Do styles before cloning for the ratio plots
         h.SetLineWidth(2)
         h.SetLineColor(plot.colors.tableu(i))
@@ -38,17 +41,39 @@ def discrete_plot():
     args.setdefault('yrange', [0, None])
 
     ### Ratio plot ###
-    hists2 = []
-    for h in hists[1:]:
-        r = h.Clone()
-        r.Divide(hists[0])
-        hists2.append(r)
+    hists2 = _ratios(hists)
     args.setdefault('opts2', 'P2+')
     args.setdefault('ytitle2', '#frac{Fit}{MC}')
     args.setdefault('ignore_outliers_y2', 0)
     args.setdefault('hline2', 1)
 
     ### Fractional uncertainty ###
+    hists3 = _fractional_uncertainties(hists)
+    args.setdefault('opts3', 'P2+')
+    args.setdefault('ytitle3', '% Error')
+    args.setdefault('ignore_outliers_y3', 0)
+    args.setdefault('yrange3', [0, None])
+
+    ### Remove bottom ticks ###
+    def frame_callback(frame):
+        frame.GetYaxis().ChangeLabel(1, -1, 0)
+    args['frame_callback'] = frame_callback
+    args['frame_callback2'] = frame_callback
+
+    ### Plot ###
+    plot.plot_discrete_bins(hists, hists2, hists3, plotter=plot.plot_ratio3, **args)
+
+
+def _ratios(hists):
+    hists2 = []
+    for h in hists[1:]:
+        r = h.Clone()
+        r.Divide(hists[0])
+        hists2.append(r)
+    return hists2
+
+
+def _fractional_uncertainties(hists):
     hists3 = []
     for h in hists:
         h = h.Clone()
@@ -60,18 +85,7 @@ def discrete_plot():
                 h.SetBinContent(i, 0)
             h.SetBinError(i, 0)
         hists3.append(h)
-    args.setdefault('opts3', 'P2+')
-    args.setdefault('ytitle3', '% Error')
-    args.setdefault('ignore_outliers_y3', 0)
-
-    ### Remove bottom ticks ###
-    def frame_callback(frame):
-        frame.GetYaxis().ChangeLabel(1, -1, 0)
-    args['frame_callback'] = frame_callback
-    args['frame_callback2'] = frame_callback
-
-    ### Plot ###
-    plot.plot_discrete_bins(hists, hists2, hists3, plotter=plot.plot_ratio3, **args)
+    return hists3
 
 
 
