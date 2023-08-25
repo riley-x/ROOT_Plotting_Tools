@@ -20,7 +20,7 @@ def basic_plot():
         subtitle='#sqrt{s}=13 TeV, 139 fb^{-1}',
         legend=['Diboson', 'Single Top', 't#bar{t}', 'W+jets'],
         ytitle='Events',
-        xtitle='p_{T}(J) [GeV]',
+        xtitle='m(J) [GeV]',
         ### Style ###
         linecolor=plot.colors.tableu,
         markersize=0,
