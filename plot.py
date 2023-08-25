@@ -57,10 +57,12 @@ plot_tiered
     Similar to a violin plot. Plots each input histogram at separated y-values. Useful
     for eye-balling differences between many different distributions, which would get 
     crowded on a standard plot. 
-_plot
-    The underlying plotting function used by everything above. Basically the same as 
-    [plot] but you need to pass it a TPad. Useful for creating custom images containing 
-    multiple canvases.
+plot_discrete_bins
+    Plots histograms in discrete x bins, so histograms appear side by side (like a bar
+    chart). Useful when histograms are very similar, and would overlap otherwise.
+Plotter
+    The underlying plotting class used by everything above. Useful for creating 
+    custom images containing multiple canvases.
 
 
 
@@ -1405,6 +1407,7 @@ def plot_ratio3(hists1, hists2, hists3, height1=0.55, outlier_arrows=True, hline
     '''
     c = ROOT.TCanvas("c1", "c1", 1000, 800)
     c.SetFillColor(colors.transparent_white)
+    cache = []
 
     ### Create pads ###
     height2 = (1 - height1) / 2 - 0.06
@@ -1434,13 +1437,15 @@ def plot_ratio3(hists1, hists2, hists3, height1=0.55, outlier_arrows=True, hline
     kwargs['titlesize'] = titlesize / height1
     # kwargs['yrange'] = list(kwargs.get('yrange', [None, None]))
     kwargs.setdefault('text_offset_bottom', 0.1 * (1 - height1)) # guess
-    cache = _plot(pad1, hists1, **kwargs)
+    plotter1 = _plot(pad1, hists1, **kwargs)
+    cache.append(plotter1)
     pad1.RedrawAxis() # Make the tick marks go above any fill
 
     ### Draw first ratio plot
     args2 = { 'ydivs': 204, 'ignore_outliers_y': 3, 'title': None, 'legend': None, 'titlesize': titlesize / height2 }
     args2.update(_copy_ratio_args(kwargs, '2'))
-    cache.append(_plot(pad2, hists2, do_legend=False, **args2))
+    plotter2 = _plot(pad2, hists2, do_legend=False, **args2)
+    cache.append(plotter2)
     pad2.RedrawAxis() # Make the tick marks go above any fill
 
     ### Draw y=1 line ###
@@ -1452,7 +1457,8 @@ def plot_ratio3(hists1, hists2, hists3, height1=0.55, outlier_arrows=True, hline
     ### Draw second ratio plot
     args3 = { 'ydivs': 204, 'ignore_outliers_y': 3, 'title': None, 'legend': None, 'titlesize': titlesize / height3, 'text_offset_bottom': 0.15 / height3 }
     args3.update(_copy_ratio_args(kwargs, '3'))
-    cache.append(_plot(pad3, hists3, do_legend=False, **args3))
+    plotter3 = _plot(pad3, hists3, do_legend=False, **args3)
+    cache.append(plotter3)
     pad3.RedrawAxis() # Make the tick marks go above any fill
 
     ### Draw y=1 line ###
@@ -1462,13 +1468,13 @@ def plot_ratio3(hists1, hists2, hists3, height1=0.55, outlier_arrows=True, hline
     if outlier_arrows: cache.append(_outliers(plotter3.frame, hists3))
 
     ### Fix axes sizing ### 
-    _fix_axis_sizing(hists1[0], pad1, True, **kwargs)
-    _fix_axis_sizing(hists2[0], pad2, True, **args2)
-    _fix_axis_sizing(hists3[0], pad3, **args3)
+    _fix_axis_sizing(plotter1.frame, pad1, True, **kwargs)
+    _fix_axis_sizing(plotter2.frame, pad2, True, **args2)
+    _fix_axis_sizing(plotter3.frame, pad3, **args3)
 
     ### Callback ###
     if axes_callback:
-        axes_callback(hists1[0], hists2[0], hists3[0])
+        axes_callback(plotter1.frame, plotter2.frame, plotter3.frame)
     if save_plot:
         save_canvas(c, kwargs.get('filename', hists1[0].GetName()))
 
