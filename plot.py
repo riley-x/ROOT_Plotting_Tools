@@ -231,6 +231,11 @@ class Plotter:
     
     See this file's docstring for configuration options, that can be passed to the init-
     ializer in kwargs. 
+
+    @param _do_draw
+        Skip draw if false
+    @param _frame
+        Supply a custom frame object
     '''
 
     def __init__(self, pad,
@@ -239,6 +244,7 @@ class Plotter:
         title_size=0.05, text_size=0.035, text_spacing=1, 
         text_offset_left=0.05, text_offset_right=0.05, text_offset_top=0.05, text_offset_bottom=0.05,
         y_pad=None, y_pad_bot=0.05, y_pad_top=0.05, 
+        _do_draw=True, _frame=None,
         **kwargs
     ):
         ### Pad ###
@@ -264,8 +270,14 @@ class Plotter:
         self.y_range = self._auto_y_range(**kwargs)
         self.z_range = self._auto_z_range(**kwargs)
 
+        ### Frame ###
+        if _frame:
+            self.frame = _frame
+        else:
+            self._create_frame(**kwargs) # This needs x_range, but also sets the other ranges
+        _apply_frame_opts(self.frame, **kwargs)
+        
         ### Object styles ###
-        self._create_frame(**kwargs) # This needs x_range, but also sets the other ranges
         for i,obj in enumerate(self.objs):
             _apply_common_opts(obj, i, **kwargs)
 
@@ -289,18 +301,20 @@ class Plotter:
         self._parse_text_pos(self.text_pos)
         self._pad_y_range(**kwargs)
 
-        self._draw()
+        if _do_draw:
+            self._draw()
 
     #####################################################################################
     ###                                      PAD                                      ###
     #####################################################################################
 
-    def _set_pad_properties(self, logx=None, logy=None, logz=None, right_margin=0.05, **kwargs):
+    def _set_pad_properties(self, logx=None, logy=None, logz=None, left_margin=None, right_margin=0.05, **kwargs):
         self.logy = logy
         self.pad.cd()
         if logx is not None: self.pad.SetLogx(logx)
         if logy is not None: self.pad.SetLogy(logy)
         if logz is not None: self.pad.SetLogz(logz)
+        if left_margin is not None: self.pad.SetLeftMargin(left_margin)
         self.pad.SetRightMargin(right_margin)
         # if rightmargin is None:
         #     if 'ztitle' in kwargs:
@@ -329,26 +343,8 @@ class Plotter:
     ###                                     RANGES                                    ###
     #####################################################################################
 
-    def _auto_x_range(self, x_range=(None, None), x_pad=None, x_pad_left=0, x_pad_right=0, **kwargs):
-        if x_range is None: return None
-        if x_range[0] is not None and x_range[1] is not None: return x_range
-
-        if x_pad is not None:
-            x_pad_left = x_pad
-            x_pad_right = x_pad
-        data_width = 1.0 - x_pad_left - x_pad_right
-            
-        x_min, x_max = get_minmax_x(self.objs)
-        if x_min is None or x_max is None: return None
-
-        if x_range[0] is not None: x_min = x_range[0]
-        if x_range[1] is not None: x_max = x_range[1]
-        
-        diff = x_max - x_min
-        if x_range[0] is None: x_min -= x_pad_left * diff / data_width
-        if x_range[1] is None: x_max += x_pad_right * diff / data_width
-
-        return (x_min, x_max)
+    def _auto_x_range(self, **kwargs):
+        return _auto_x_range(objs=self.objs, **kwargs)
 
     def _fix_bad_yticks(self, y_min, y_max, at_least_zero, ydivs=None, **kwargs):
         '''
@@ -495,8 +491,6 @@ class Plotter:
             self.frame.GetYaxis().SetRangeUser(*self.y_range)
         if self.z_range is not None:
             self.frame.GetZaxis().SetRangeUser(*self.z_range)
-
-        _apply_frame_opts(self.frame, **kwargs)
 
     def _format_objs(self, **kwargs):
         for i,obj in enumerate(self.objs):
@@ -842,6 +836,9 @@ class Plotter:
             self._legend_hori_pos
             self._legend_vert_pos
         '''
+        if textpos == 'auto': # failed/skipped auto, default to topleft
+            textpos = 'topleft'
+
         if 'left' in textpos:
             self._title_hori_pos = 'left'
             self._legend_hori_pos = 'left'
@@ -1002,6 +999,33 @@ def get_minmax_x(objs):
         if x_max is None or o_max > x_max: x_max = o_max
     return x_min, x_max    
 
+def _auto_x_range(objs, x_range=(None, None), x_pad=None, x_pad_left=0, x_pad_right=0, **kwargs):
+    '''
+    Finds an automatic x-range given a list of plot objects.
+
+    @returns The new x-range.
+    '''
+    if x_range is None: return None
+    if x_range[0] is not None and x_range[1] is not None: return x_range
+
+    if x_pad is not None:
+        x_pad_left = x_pad
+        x_pad_right = x_pad
+    data_width = 1.0 - x_pad_left - x_pad_right
+        
+    x_min, x_max = get_minmax_x(objs)
+    if x_min is None or x_max is None: return None
+
+    if x_range[0] is not None: x_min = x_range[0]
+    if x_range[1] is not None: x_max = x_range[1]
+    
+    diff = x_max - x_min
+    if x_range[0] is None: x_min -= x_pad_left * diff / data_width
+    if x_range[1] is None: x_max += x_pad_right * diff / data_width
+
+    return (x_min, x_max)
+
+
 def _minmax_y(obj, x_range=None, ignore_outliers_y=0, **kwargs):
     '''
     Returns (min, min>0, max) of [obj]
@@ -1125,6 +1149,8 @@ def _apply_frame_opts(obj, **kwargs):
     if 'ztitle' in kwargs:
         obj.GetZaxis().SetTitle(kwargs['ztitle'])
 
+    if x := kwargs.get('ytitleoffset'):
+        obj.GetYaxis().SetTitleOffset(x)
     if x := kwargs.get('ztitleoffset'):
         obj.GetZaxis().SetTitleOffset(x)
 
@@ -1577,26 +1603,28 @@ def _draw_tier_fill(h, y, i, fillcolor=None, **kwargs):
     return cache
 
 
-def _draw_tier_line(h, y, i, linecolor=None, linewidth=None, xrange=None, **kwargs):
+def _draw_tier_line(h, y, i, linecolor=None, linewidth=None, x_range=None, **kwargs):
     cache = []
     color = _arg(linecolor, i) if linecolor else h.GetLineColor()
     width = _arg(linewidth, i) if linewidth else h.GetLineWidth()
     first = True
     for x in range(1, h.GetNbinsX() + 1):
+        v = h.GetBinContent(x)
         x1 = h.GetXaxis().GetBinLowEdge(x)
         x2 = h.GetXaxis().GetBinLowEdge(x + 1)
-        y2 = y + h.GetBinContent(x)
+        if x_range:
+            if x1 < x_range[0]: continue
+            if x2 > x_range[1]: continue
 
-        if xrange:
-            if x1 < xrange[0]: continue
-            if x2 > xrange[1]: continue
-
-        lines = [ROOT.TLine(x1, y2, x2, y2)]
+        y2 = y + v if v > 0 else y
+        lines = []
+        lines.append(ROOT.TLine(x1, y2, x2, y2))
         if first: 
             first = False
         else:
             y_old = y + h.GetBinContent(x - 1)
             lines.append(ROOT.TLine(x1, y_old, x1, y2))
+
 
         for l in lines:
             l.SetLineColor(color)
@@ -1606,7 +1634,7 @@ def _draw_tier_line(h, y, i, linecolor=None, linewidth=None, xrange=None, **kwar
     return cache
 
 
-def plot_tiered(hists, y_labels=None, plot_style=None, ydatapad_top=0.1, **kwargs):
+def plot_tiered(hists, y_labels=None, plot_style=None, y_pad_top=0.1, logy=False, tier_title=None, **kwargs):
     '''
     Similar to a violin plot, this plots each histogram in its own equi-height y-bin.
     Negative values are supressed.
@@ -1621,9 +1649,24 @@ def plot_tiered(hists, y_labels=None, plot_style=None, ydatapad_top=0.1, **kwarg
             - "fill": Filled boxes from 0. Default option if #series == 1.
             - "line": Similar to ROOT "hist" mode. Default option if #series > 1.
             - "point": Similar to ROOT "PE" mode. Not implemented yet.
+    @param tier_title
+        Horizontal title placed above the tier labels.
     '''
+    hists_flat = [x for y in hists for x in y]
+    n_hists = len(hists_flat)
     n_tiers = len(hists)
     c = ROOT.TCanvas('c1', 'c1', 1000, 800)
+
+    ### Handle some opts that are usually done in _plot ###
+    yrange = kwargs.pop('y_range', None)
+    kwargs.setdefault('text_pos', 'bottomright')
+    kwargs.setdefault('legend_opts', 'L')
+    if y_labels: 
+        kwargs.setdefault('left_margin', 0.2)
+        kwargs.setdefault('ytitleoffset', 2)
+    if legend := kwargs.get('legend'):
+        if isinstance(legend[0], str):
+            kwargs['legend'] = list(legend) + [''] * (n_hists - len(legend))
 
     ### Create the frame ###
     axis = hists[0][0].GetXaxis()
@@ -1631,34 +1674,32 @@ def plot_tiered(hists, y_labels=None, plot_style=None, ydatapad_top=0.1, **kwarg
         h_frame = ROOT.TH2F('tiers', '', axis.GetNbins(), axis.GetXbins().GetArray(), n_tiers, 0, n_tiers)
     else:
         h_frame = ROOT.TH2F('tiers', '', axis.GetNbins(), axis.GetXmin(), axis.GetXmax(), n_tiers, 0, n_tiers)
+    h_frame.SetDirectory(0)
     h_frame.Draw('AXIS')
 
-    ### Set bin labels ###
-    if y_labels is not None:
-        c.SetLeftMargin(kwargs.get('leftmargin', 0.2))
-        h_frame.GetYaxis().SetTitleOffset(kwargs.get('ytitle_offset', 2))
+    ### Labels ###
+    if y_labels:
         for y,label in enumerate(y_labels):
             h_frame.GetYaxis().SetBinLabel(y + 1, label)
 
-    ### Handle some opts that are usually done in _plot ###
-    kwargs['xrange'] = _auto_xrange([x for s in hists for x in s], **kwargs)
-    yrange = kwargs.pop('yrange', None)
-    logy = kwargs.pop('logy', None)
-    kwargs.pop('opts', None)
-
-    if 'legend' in kwargs and 'legend_custom' not in kwargs:
-        legend_custom = []
-        for i,obj in enumerate(hists[0]): 
-            _apply_common_opts(obj, i, **kwargs)
-            legend_custom.append([obj, kwargs['legend'][i], 'L'])
-        kwargs['legend_custom'] = legend_custom
+    ### Initialize plotter ###
+    plotter = Plotter(
+        pad=c,
+        objs=hists_flat,
+        y_range=(0, n_tiers),
+        _do_draw=False,
+        _frame=h_frame,
+        **kwargs,
+    )
+    h_frame.GetXaxis().SetRangeUser(*plotter.x_range)
 
     ### Draw histograms ###
-    cache = []
+    cache = [plotter]
+    kwargs['x_range'] = plotter.x_range
     for y,series in enumerate(hists):
         # Normalize the histograms to the maximum value. In user coordinates, defined
         # by the frame histogram above, the max height of each y bin is just 1.
-        _, min_pos, max_val = _get_minmax_all(series, **kwargs)
+        _, min_pos, max_val = get_minmax_y(series, **kwargs)
         if not max_val: continue
 
         if logy:
@@ -1668,18 +1709,18 @@ def plot_tiered(hists, y_labels=None, plot_style=None, ydatapad_top=0.1, **kwarg
             series = [log_hist(h, min_val=min_pos) for h in series]
 
         for i,h in enumerate(series):
-            h.Scale((1 - ydatapad_top) / max_val)
+            h.Scale((1 - y_pad_top) / max_val)
             if plot_style == 'fill' or plot_style is None and len(series) == 1:
                 cache.append(_draw_tier_fill(h, y, i, **kwargs))
             elif plot_style == 'line' or plot_style is None and len(series) > 1:
                 cache.append(_draw_tier_line(h, y, i, **kwargs))
 
-    ### Draw labels and text ###
-    cache.append(_plot(c, [h_frame], opts='AXIS SAMES', **kwargs)) # Make the tick marks / titles go above the boxes
-    
-    if bin_title := kwargs.get('bin_title'):
+    ### Draw text and y-bin title ###
+    for tex in plotter.titles: tex.Draw()
+    if plotter.legend: plotter.legend.Draw()
+    if tier_title:
         c.SetTopMargin(0.06)
-        tex = ROOT.TLatex(0, 0.95, bin_title)
+        tex = ROOT.TLatex(0, 0.95, tier_title)
         tex.SetTextFont(42)
         tex.SetTextSize(0.035)
         tex.SetNDC()
