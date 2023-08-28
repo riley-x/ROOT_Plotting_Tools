@@ -1634,7 +1634,7 @@ def _draw_tier_line(h, y, i, linecolor=None, linewidth=None, x_range=None, **kwa
     return cache
 
 
-def plot_tiered(hists, y_labels=None, plot_style=None, y_pad_top=0.1, logy=False, tier_title=None, **kwargs):
+def plot_tiered(hists, tier_labels=None, plot_style=None, y_pad_top=0.1, logy=False, tier_title=None, **kwargs):
     '''
     Similar to a violin plot, this plots each histogram in its own equi-height y-bin.
     Negative values are supressed.
@@ -1642,8 +1642,8 @@ def plot_tiered(hists, y_labels=None, plot_style=None, y_pad_top=0.1, logy=False
     @param hists
         A list of histograms with shape (#ybins, #series). The y-bins are listed from
         bottom to top. The series histograms in each ybin are normalized to each other.
-    @param y_labels
-        The label of each y-bin, in matching order as `hists.shape[0]`.
+    @param tier_labels
+        The label of each tier, in matching order as `hists.shape[0]`.
     @param plot_style
         How to draw the histograms. This can be
             - "fill": Filled boxes from 0. Default option if #series == 1.
@@ -1661,7 +1661,7 @@ def plot_tiered(hists, y_labels=None, plot_style=None, y_pad_top=0.1, logy=False
     yrange = kwargs.pop('y_range', None)
     kwargs.setdefault('text_pos', 'bottomright')
     kwargs.setdefault('legend_opts', 'L')
-    if y_labels: 
+    if tier_labels: 
         kwargs.setdefault('left_margin', 0.2)
         kwargs.setdefault('ytitleoffset', 2)
     if legend := kwargs.get('legend'):
@@ -1678,8 +1678,8 @@ def plot_tiered(hists, y_labels=None, plot_style=None, y_pad_top=0.1, logy=False
     h_frame.Draw('AXIS')
 
     ### Labels ###
-    if y_labels:
-        for y,label in enumerate(y_labels):
+    if tier_labels:
+        for y,label in enumerate(tier_labels):
             h_frame.GetYaxis().SetBinLabel(y + 1, label)
 
     ### Initialize plotter ###

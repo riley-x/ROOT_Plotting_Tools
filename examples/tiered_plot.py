@@ -15,77 +15,29 @@ import histograms
 import ROOT
 
 def tiered_plot():
-    hists = histograms.hists_mVV_vjetsfit
+    hists = histograms.hists_ptV_tiered_mVV_SMvEFT
+    hists = [[hists[i], hists[i+1]] for i in range(0, len(hists), 2)]
     args = {
         'filename':     'tiered_plot',
         'title':        'ATLAS Dummy',
-        'subtitle':     [
-            '#sqrt{s}=13 TeV, 139 fb^{-1}',
-            'W+jets Fits',
-        ],
-        'legend':       ['MC', 'GPR MLE Fit', 'GPR p(f | X,y)'],
-        'xtitle':       'm(VV) [GeV]',
+        'subtitle':     '#sqrt{s}=13 TeV, 139 fb^{-1}',
+        'legend':       ['SM Diboson', 'EFT c_{W}^{2}'],
+        'xtitle':       'p_{T}(V) [GeV]',
+        'ytitle':       'Normalized Events',
+        'tier_title':   'm(VV) [GeV]',
+        'tier_labels':  make_bins([0, 200, 500, 800, 1200, 2000, 3000]),
+        'linecolor':    plot.colors.tableu,
+        'x_range':      [0, 2000],
+        'xdivs':        506,
     }
-
-    ### Main pad ###
-    for i,h in enumerate(hists): # Do styles before cloning for the ratio plots
-        h.SetLineWidth(2)
-        h.SetLineColor(plot.colors.tableu(i))
-        h.SetFillColorAlpha(plot.colors.tableu(i), 0.2)
-        h.SetMarkerColor(plot.colors.tableu(i))
-        h.SetMarkerStyle(ROOT.kFullCircle + i)
-    args.setdefault('ytitle', 'Events / GeV')
-    args.setdefault('opts', 'P2+')
-    args.setdefault('legend_opts', 'PE')
-    args.setdefault('xrange', None)
-    args.setdefault('yrange', [0, None])
-
-    ### Ratio plot ###
-    hists2 = _ratios(hists)
-    args.setdefault('opts2', 'P2+')
-    args.setdefault('ytitle2', '#frac{Fit}{MC}')
-    args.setdefault('ignore_outliers_y2', 0)
-    args.setdefault('hline2', 1)
-
-    ### Fractional uncertainty ###
-    hists3 = _fractional_uncertainties(hists)
-    args.setdefault('opts3', 'P2+')
-    args.setdefault('ytitle3', '% Error')
-    args.setdefault('ignore_outliers_y3', 0)
-    args.setdefault('yrange3', [0, None])
-
-    ### Remove bottom ticks ###
-    def frame_callback(frame):
-        frame.GetYaxis().ChangeLabel(1, -1, 0)
-    args['frame_callback'] = frame_callback
-    args['frame_callback2'] = frame_callback
-
-    ### Plot ###
-    plot.plot_discrete_bins(hists, hists2, hists3, plotter=plot.plot_ratio3, **args)
+    plot.plot_tiered(hists, **args)
 
 
-def _ratios(hists):
-    hists2 = []
-    for h in hists[1:]:
-        r = h.Clone()
-        r.Divide(hists[0])
-        hists2.append(r)
-    return hists2
-
-
-def _fractional_uncertainties(hists):
-    hists3 = []
-    for h in hists:
-        h = h.Clone()
-        for i in range(h.GetNbinsX() + 2):
-            v = h.GetBinContent(i)
-            if v > 0:
-                h.SetBinContent(i, 100 * h.GetBinError(i) / v)
-            else:
-                h.SetBinContent(i, 0)
-            h.SetBinError(i, 0)
-        hists3.append(h)
-    return hists3
+def make_bins(vals):
+    out = []
+    for i in range(len(vals) - 1):
+        out.append('{},{}'.format(vals[i], vals[i+1]))
+    return out
 
 
 

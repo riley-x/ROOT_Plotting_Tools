@@ -37,8 +37,8 @@ def discrete_plot():
     args.setdefault('ytitle', 'Events / GeV')
     args.setdefault('opts', 'P2+')
     args.setdefault('legend_opts', 'PE')
-    args.setdefault('xrange', None)
-    args.setdefault('yrange', [0, None])
+    args.setdefault('x_range', None)
+    args.setdefault('y_range', [0, None])
 
     ### Ratio plot ###
     hists2 = _ratios(hists)
@@ -52,7 +52,7 @@ def discrete_plot():
     args.setdefault('opts3', 'P2+')
     args.setdefault('ytitle3', '% Error')
     args.setdefault('ignore_outliers_y3', 0)
-    args.setdefault('yrange3', [0, None])
+    args.setdefault('y_range3', [0, None])
 
     ### Remove bottom ticks ###
     def frame_callback(frame):

@@ -72,3 +72,10 @@ or rebinning a 2D histogram with variable bins.
 [Source](./examples/discrete_plot.py). This script showcases both `plot_discrete_bins()`, which plots histograms discretized in equal-width bins, and `plot_ratio3()`, which adds two subplots beneath the main plot.
 
 <img src="./examples/discrete_plot.png" style="max-height: 3in">
+
+
+### Tiered Plot
+
+[Source](./examples/tiered_plot.py). This script showcases `plot_tiered()`, which plots multiple histograms in several top-to-bottom tiers. This style is useful for comparing multiple distribution shapes without crowding the plot, at the cost of obscuring the relative normalizations.
+
+<img src="./examples/tiered_plot.png" style="max-height: 3in">
