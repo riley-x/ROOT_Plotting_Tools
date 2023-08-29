@@ -1294,7 +1294,7 @@ def plot(objs, canvas_size=(1000,800), canvas_name='c1', **kwargs):
     save_canvas(c, kwargs.get('filename', objs[0].GetName()))
 
 
-def _copy_ratio_args(args, postfix):
+def _copy_ratio_args(plotter, args, postfix):
     '''
     Copies arguments for ratio plots. Arguments like 'ytitle2' are copied to 'ytitle',
     and common arguments like x-axis options are copied as-is.
@@ -1304,6 +1304,7 @@ def _copy_ratio_args(args, postfix):
         if k[-1] == postfix: out[k[:-1]] = v
         elif k[0] == 'x': out[k] = v
         elif k == 'rightmargin': out[k] = v
+    out['x_range'] = plotter.x_range
     return out
 
 
@@ -1334,6 +1335,7 @@ def _fix_axis_sizing(h, pad, remove_x_labels=False, xlabeloffset=0.005, xlabelsi
     h.GetYaxis().SetTitleSize(old_size / height)
     h.GetYaxis().SetTitleOffset(old_offset_y * height)
 
+    height -= height * (pad.GetBottomMargin() + pad.GetTopMargin())
     h.GetXaxis().SetTickLength(tick_length_x / height) 
     h.GetYaxis().SetTickLength(tick_length_y / (1 - pad.GetTopMargin() - pad.GetBottomMargin())) 
     # See https://root-forum.cern.ch/t/inconsistent-tick-length/18563/9
@@ -1394,7 +1396,7 @@ def plot_ratio(hists1, hists2, height1=0.7, outlier_arrows=True, hline=None, axe
 
     ### Draw ratio plot ###
     args2 = { 'ydivs': 504, 'ignore_outliers_y': 4, 'title': None, 'legend': None }
-    args2.update(_copy_ratio_args(kwargs, '2'))
+    args2.update(_copy_ratio_args(plotter1, kwargs, '2'))
     plotter2 = _plot(pad2, hists2, **args2)
     cache.append(plotter2)
     pad2.RedrawAxis() # Make the tick marks go above any fill
@@ -1475,7 +1477,7 @@ def plot_ratio3(hists1, hists2, hists3, height1=0.55, outlier_arrows=True, hline
         'titlesize': titlesize / height2,
         'textsize': textsize / height2,
     }
-    args2.update(_copy_ratio_args(kwargs, '2'))
+    args2.update(_copy_ratio_args(plotter1, kwargs, '2'))
     plotter2 = _plot(pad2, hists2, do_legend=False, **args2)
     cache.append(plotter2)
     pad2.RedrawAxis() # Make the tick marks go above any fill
@@ -1495,7 +1497,7 @@ def plot_ratio3(hists1, hists2, hists3, height1=0.55, outlier_arrows=True, hline
         'titlesize': titlesize / height3,
         'textsize': textsize / height3,
     }
-    args3.update(_copy_ratio_args(kwargs, '3'))
+    args3.update(_copy_ratio_args(plotter1, kwargs, '3'))
     plotter3 = _plot(pad3, hists3, do_legend=False, **args3)
     cache.append(plotter3)
     pad3.RedrawAxis() # Make the tick marks go above any fill
