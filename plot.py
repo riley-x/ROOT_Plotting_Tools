@@ -620,9 +620,9 @@ class Plotter:
     def _default_legend_opt(self, i):
         opt = ''
         plot_opt = _arg(self.opts, i)
-        if 'HIST' or 'L' in plot_opt:
+        if 'HIST' in plot_opt or 'L' in plot_opt:
             opt += 'L'
-        if 'P' or 'E' in plot_opt:
+        if 'P' in plot_opt or 'E' in plot_opt:
             opt += 'PE'
         return opt
 
@@ -2342,7 +2342,7 @@ def normalize_ytitle(mode, splitline=False):
     elif mode == "integral%":
         return "% of Total Events"
     elif "cumulative" in mode:
-        if splitline: return "#splitline{Cumulative}{Events}"
+        if splitline: return "#splitline{Cumulative}{Fraction}"
         return "Cumulative Fraction of Events"
     else:
         return "Events"
