@@ -2291,7 +2291,7 @@ def normalize(h, mode="integral"):
     elif mode.startswith("integral"):
         integral = h.Integral(0, -1)
         if integral == 0:
-            print("plot.normalize() Warning! Integral is 0, doing nothing")
+            warning("plot.normalize() Integral is 0, doing nothing")
         elif '%' in mode:
             h.Scale(100 / integral)
         else:
@@ -2301,13 +2301,13 @@ def normalize(h, mode="integral"):
         for i in range(0, h.GetNbinsX()+2): # TH1 bins are 1-indexed
             tot += abs(h.GetBinContent(i))
         if tot == 0:
-            print("plot.normalize() Warning! Integral is 0, doing nothing")
+            warning("plot.normalize() Integral is 0, doing nothing")
         else:
             h.Scale(1 / tot)
     elif mode == "cumulative":
         tot = h.Integral(0, -1)
         if tot == 0:
-            print("plot.normalize() Warning! Integral is 0, doing nothing")
+            warning("plot.normalize() Integral is 0, doing nothing")
         else:
             running_sum = 0
             for i in range(0, h.GetNbinsX() + 2): 
@@ -2317,7 +2317,7 @@ def normalize(h, mode="integral"):
     elif mode == "cumulativer":
         tot = h.Integral(0, -1)
         if tot == 0:
-            print("plot.normalize() Warning! Integral is 0, doing nothing")
+            warning("plot.normalize() Integral is 0, doing nothing")
         else:
             running_sum = 0
             for i in range(h.GetNbinsX() + 1, -1, -1): 
