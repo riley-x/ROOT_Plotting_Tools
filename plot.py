@@ -241,7 +241,7 @@ class Plotter:
     def __init__(self, pad,
         objs=[], opts='', stack=False, 
         text_pos='auto', 
-        title_size=0.05, text_size=0.035, text_spacing=1, 
+        title_size=0.05, text_size=0.035, text_spacing=1, text_back_color=None,
         text_offset_left=0.05, text_offset_right=0.05, text_offset_top=0.05, text_offset_bottom=0.05,
         y_pad=None, y_pad_bot=0.05, y_pad_top=0.05, 
         _do_draw=True, _frame=None,
@@ -284,6 +284,7 @@ class Plotter:
         ### Text and Legend ###
         # Sizes and positions are all in pad units.
         self.text_pos = text_pos
+        self.text_back_color = text_back_color
 
         self.title_size = title_size
         self.text_size = text_size
@@ -526,6 +527,7 @@ class Plotter:
         if 'ATLAS' in title:
             atlas = self._create_atlas_title()
             texts.append([x, atlas])
+            self.titles.append(atlas)
             x += atlas.GetXsize() + 0.01 # 0.115*696*c.GetWh()/(472*c.GetWw())
             height = atlas.GetYsize()
             title = title[len('ATLAS '):]
@@ -538,6 +540,7 @@ class Plotter:
             tex.SetTextSize(self.title_size)
             tex.SetTextAlign(ROOT.kVAlignBottom + ROOT.kHAlignLeft)
             texts.append([x, tex])
+            self.titles.append(tex)
             height = tex.GetYsize()
 
         y += height
@@ -555,9 +558,12 @@ class Plotter:
                 of pairs (x, ROOT.TLatex). The x and y are offsets from the top-left of 
                 the text bounding box, referring to the left edge and baseline, assuming 
                 top-left alignment.
+            self.titles
+                A flattened version of the above list, with just the TLatex objects.
             self.title_height
         '''
         self.title_lines = [] 
+        self.titles = []
         y = 0 # running offset (downwards) from top-left of all text
 
         if title:
@@ -578,8 +584,15 @@ class Plotter:
                 tex.SetTextAlign(ROOT.kVAlignBottom + ROOT.kHAlignLeft)
 
                 self.title_lines.append([y, [[0, tex]]])
+                self.titles.append(tex)
 
         self.title_height = y
+        self._format_titles()
+
+    def _format_titles(self):
+        for t in self.titles:
+            if self.text_back_color is not None:
+                pass #TODO
 
     def _get_line_width(self, line):
         '''
@@ -593,13 +606,12 @@ class Plotter:
     
     def _place_titles(self, x0, y0, align):
         '''
+        Sets the x/y positions of the TLatex objects in self.titles
+
         @param x0 left or right edge of the texts, depending on [align]
         @param y0 top edge of the texts
         @param align either 'left' or 'right'
-        @sets self.titles
-            A list of ROOT.TLatex with coordinates set
         '''
-        self.titles = []
         for line in self.title_lines:
             y = y0 - line[0]
             line_width = self._get_line_width(line[1])
@@ -610,7 +622,6 @@ class Plotter:
                     x = x0 - line_width + x_offset
                 tex.SetX(x)
                 tex.SetY(y)
-                self.titles.append(tex)
 
 
     #####################################################################################
@@ -951,7 +962,7 @@ class Plotter:
         for tex in self.titles: tex.Draw()
         if self.legend: self.legend.Draw()
 
-    def draw_marker(x, y, axes_units=False):
+    def draw_marker(self, x, y, axes_units=False):
         '''
         @param axes - If true x and y are in axes units, otherwise they are in user units
         '''
@@ -963,6 +974,14 @@ class Plotter:
             m = ROOT.TMarker(x, y, ROOT.kFullSquare)
         m.Draw()
         self.cache.append(m)
+
+    def draw_hline(self, y, style=ROOT.kSolid):
+        # TODO this will still draw the line out of the axes if y is not in yrange
+        if y is None: return
+        line = ROOT.TLine(self.x_range[0], y, self.x_range[1], y)
+        line.SetLineStyle(style)
+        line.Draw()
+        self.cache.append(line)
 
 
 ##############################################################################
@@ -1636,7 +1655,7 @@ def _draw_tier_line(h, y, i, linecolor=None, linewidth=None, x_range=None, **kwa
     return cache
 
 
-def plot_tiered(hists, tier_labels=None, plot_style=None, y_pad_top=0.1, logy=False, tier_title=None, **kwargs):
+def plot_tiered(hists, tier_labels=None, tier_title=None, plot_style=None, y_pad_top=0.1, logy=False, **kwargs):
     '''
     Similar to a violin plot, this plots each histogram in its own equi-height y-bin.
     Negative values are supressed.
@@ -1663,7 +1682,7 @@ def plot_tiered(hists, tier_labels=None, plot_style=None, y_pad_top=0.1, logy=Fa
     yrange = kwargs.pop('y_range', None)
     kwargs.setdefault('text_pos', 'bottomright')
     kwargs.setdefault('legend_opts', 'L')
-    if tier_labels: 
+    if tier_labels is not None: 
         kwargs.setdefault('left_margin', 0.2)
         kwargs.setdefault('ytitleoffset', 2)
     if legend := kwargs.get('legend'):
@@ -1680,7 +1699,7 @@ def plot_tiered(hists, tier_labels=None, plot_style=None, y_pad_top=0.1, logy=Fa
     h_frame.Draw('AXIS')
 
     ### Labels ###
-    if tier_labels:
+    if tier_labels is not None:
         for y,label in enumerate(tier_labels):
             h_frame.GetYaxis().SetBinLabel(y + 1, label)
 
@@ -1716,6 +1735,10 @@ def plot_tiered(hists, tier_labels=None, plot_style=None, y_pad_top=0.1, logy=Fa
                 cache.append(_draw_tier_fill(h, y, i, **kwargs))
             elif plot_style == 'line' or plot_style is None and len(series) > 1:
                 cache.append(_draw_tier_line(h, y, i, **kwargs))
+
+    ### Draw hlines ###
+    for y in range(1, n_tiers):
+        plotter.draw_hline(y)
 
     ### Draw text and y-bin title ###
     for tex in plotter.titles: tex.Draw()
