@@ -247,17 +247,18 @@ class Plotter:
         _do_draw=True, _frame=None,
         **kwargs
     ):
-        ### Pad ###
-        self.pad = pad
-        self._set_pad_properties(**kwargs)
-
         ### Objs ###
         self.objs = list(objs)
+        self.is_2d = self.objs and 'TH2' in self.objs[0].ClassName()
         self.opts = opts
         self.stack = stack
         self.frame = None
         self.cache = []
         if stack: self._make_stack()
+
+        ### Pad ###
+        self.pad = pad
+        self._set_pad_properties(**kwargs)
 
         ### Range parsing ###
         if y_pad is not None:
@@ -309,21 +310,22 @@ class Plotter:
     ###                                      PAD                                      ###
     #####################################################################################
 
-    def _set_pad_properties(self, logx=None, logy=None, logz=None, left_margin=None, right_margin=0.05, **kwargs):
+    def _set_pad_properties(self, logx=None, logy=None, logz=None, left_margin=None, right_margin=None, **kwargs):
         self.logy = logy
         self.pad.cd()
         if logx is not None: self.pad.SetLogx(logx)
         if logy is not None: self.pad.SetLogy(logy)
         if logz is not None: self.pad.SetLogz(logz)
         if left_margin is not None: self.pad.SetLeftMargin(left_margin)
+        if right_margin is None:
+            if 'ztitle' in kwargs:
+                right_margin = 0.2
+            elif self.is_2d and 'Z' in _arg(self.opts, 0):
+                right_margin = 0.13
+            else:
+                right_margin = 0.05
         self.pad.SetRightMargin(right_margin)
-        # if rightmargin is None:
-        #     if 'ztitle' in kwargs:
-        #         rightmargin = 0.2
-        #     elif 'Z' in _arg(opts, 0):
-        #         rightmargin = 0.13
-        #     else:
-        #         rightmargin = 0.05
+        
 
     def user_to_axes(self, x, y):
         return user_to_axes(self.pad, self.frame, (x, y))
@@ -345,6 +347,7 @@ class Plotter:
     #####################################################################################
 
     def _auto_x_range(self, **kwargs):
+        if self.is_2d: return kwargs.get('x_range')
         return _auto_x_range(objs=self.objs, **kwargs)
 
     def _fix_bad_yticks(self, y_min, y_max, at_least_zero, ydivs=None, **kwargs):
@@ -377,6 +380,7 @@ class Plotter:
         Updates [self.yrange] with extra padding, if using auto axis limits. Also resets
         the limits on [self.frame].
         '''
+        if self.is_2d: return None
         if not self.auto_y_bot and not self.auto_y_top: return 
 
         ### Canvas units ###
@@ -420,7 +424,9 @@ class Plotter:
 
         ### No auto range ###
         if y_range is None: return None
-        if 'TH2' in self.objs[0].ClassName(): return None
+        if self.is_2d: 
+            if y_range != 'auto': return y_range
+            else: return None
         
         ### Set tracking members ###
         if y_range == 'auto': y_range = (None, None)
@@ -468,6 +474,13 @@ class Plotter:
     #####################################################################################
 
     def _make_stack(self):
+        '''
+        Assumes self.objs is a list of TH1s, and adds them cumulatively to create a list
+        of stack histograms insteads.
+
+        @modifies
+            self.objs
+        '''
         new_objs = []
         for i,obj in enumerate(self.objs):
             obj = obj.Clone()
