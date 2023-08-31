@@ -995,6 +995,8 @@ class Plotter:
         line.Draw()
         self.cache.append(line)
 
+    def draw_outliers(self):
+        self.cache.append(_outliers(self.frame, self.objs))
 
 ##############################################################################
 ###                                 HELPERS                                ###
@@ -1196,6 +1198,41 @@ def _apply_frame_opts(obj, **kwargs):
         obj.GetZaxis().SetNdivisions(x, True)
 
 
+
+### OUTLIERS ###
+
+def _outliers(frame, hists):
+    '''
+    Draws outlier arrows for points that aren't in the yrange of the graph. 
+    '''
+    x_min = frame.GetXaxis().GetXmin()
+    x_max = frame.GetXaxis().GetXmax()
+
+    y_min = frame.GetMinimum() # user coordinates
+    y_max = frame.GetMaximum()
+    y_pad = (y_max - y_min) / 50
+
+    markers = []
+    for h in hists:
+        if 'TH1' in h.ClassName():
+            for i in range(h.GetNbinsX()):
+                v = h.GetBinContent(i+1)
+                x = h.GetXaxis().GetBinCenter(i+1)
+                if x < x_min or x > x_max: continue
+                if v == 0 and h.GetBinError(i+1) == 0: continue
+                elif y_max is not None and v > y_max:
+                    m = ROOT.TMarker(x, y_max - y_pad, ROOT.kFullTriangleUp)
+                elif y_min is not None and v < y_min:
+                    m = ROOT.TMarker(x, y_min + y_pad, ROOT.kFullTriangleDown)
+                else: continue
+                
+                m.SetMarkerColor(h.GetLineColor())
+                m.Draw()
+                markers.append(m)
+
+    return markers
+
+
 ##############################################################################
 ###                            PLOT COORDINATES                            ###
 ##############################################################################
@@ -1288,37 +1325,6 @@ def _plot(c, objs, canvas_callback=None, frame_callback=None, **kwargs):
         plotter.cache.append(frame_callback(plotter.frame))
     return plotter
 
-
-def _outliers(frame, hists):
-    '''
-    Draws outlier arrows for points that aren't in the yrange of the graph. 
-    '''
-    x_min = frame.GetXaxis().GetXmin()
-    x_max = frame.GetXaxis().GetXmax()
-
-    y_min = frame.GetMinimum() # user coordinates
-    y_max = frame.GetMaximum()
-    y_pad = (y_max - y_min) / 50
-
-    markers = []
-    for h in hists:
-        if 'TH1' in h.ClassName():
-            for i in range(h.GetNbinsX()):
-                v = h.GetBinContent(i+1)
-                x = h.GetXaxis().GetBinCenter(i+1)
-                if x < x_min or x > x_max: continue
-                if v == 0 and h.GetBinError(i+1) == 0: continue
-                elif y_max is not None and v >= y_max:
-                    m = ROOT.TMarker(x, y_max - y_pad, ROOT.kFullTriangleUp)
-                elif y_min is not None and v < y_min:
-                    m = ROOT.TMarker(x, y_min + y_pad, ROOT.kFullTriangleDown)
-                else: continue
-                
-                m.SetMarkerColor(h.GetLineColor())
-                m.Draw()
-                markers.append(m)
-
-    return markers
 
 
 def plot(objs, canvas_size=(1000,800), canvas_name='c1', **kwargs):
