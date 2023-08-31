@@ -1643,7 +1643,7 @@ def _draw_tier_line(h, y, i, linecolor=None, linewidth=None, x_range=None, **kwa
     cache = []
     color = _arg(linecolor, i) if linecolor else h.GetLineColor()
     width = _arg(linewidth, i) if linewidth else h.GetLineWidth()
-    first = True
+    y_last = None
     for x in range(1, h.GetNbinsX() + 1):
         v = h.GetBinContent(x)
         x1 = h.GetXaxis().GetBinLowEdge(x)
@@ -1655,12 +1655,9 @@ def _draw_tier_line(h, y, i, linecolor=None, linewidth=None, x_range=None, **kwa
         y2 = y + v if v > 0 else y
         lines = []
         lines.append(ROOT.TLine(x1, y2, x2, y2))
-        if first: 
-            first = False
-        else:
-            y_old = y + h.GetBinContent(x - 1)
-            lines.append(ROOT.TLine(x1, y_old, x1, y2))
-
+        if y_last is not None: 
+            lines.append(ROOT.TLine(x1, y_last, x1, y2))
+        y_last = y2
 
         for l in lines:
             l.SetLineColor(color)
