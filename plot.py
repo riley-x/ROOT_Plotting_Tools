@@ -325,7 +325,6 @@ class Plotter:
             else:
                 right_margin = 0.05
         self.pad.SetRightMargin(right_margin)
-        
 
     def user_to_axes(self, x, y):
         return user_to_axes(self.pad, self.frame, (x, y))
@@ -490,7 +489,7 @@ class Plotter:
         self.objs = new_objs
 
     def _create_frame(self, **kwargs):
-        if self.x_range and self.y_range:
+        if self.x_range and self.y_range and not self.is_2d:
             self.frame = ROOT.TH1F('h_frame', '', 1, *self.x_range)
             self.frame.SetDirectory(0)
         else: # use objs[0] as the frame to preserve default ROOT behavior 
@@ -1172,6 +1171,9 @@ def _apply_common_opts(obj, i, **kwargs):
         obj.SetFillColor(_arg(kwargs['fillcolor'], i))
     if 'fillstyle' in kwargs:
         obj.SetFillStyle(_arg(kwargs['fillstyle'], i))
+
+    if x := kwargs.get('ztitle'): # this needs to be applied to the histogram which was drawn with colz
+        obj.GetZaxis().SetTitle(x)
 
 def _apply_frame_opts(obj, **kwargs):
     if 'xtitle' in kwargs:
@@ -2387,7 +2389,16 @@ def normalize_ytitle(mode, splitline=False):
 
 
 def normalize_2d(h, mode):
-    if mode == 'y_bin':
+    h = h.Clone()
+    if 'integral' in mode:
+        integral = h.Integral(0, -1, 0, -1)
+        if integral == 0:
+            warning("plot.normalize_2d() Integral is 0, doing nothing")
+        elif '%' in mode:
+            h.Scale(100 / integral)
+        else:
+            h.Scale(1 / integral)
+    elif mode == 'y_bin':
         for y in range(0, h.GetNbinsY() + 2):
             sum_bin = 0
             for x in range(0, h.GetNbinsX() + 2):
