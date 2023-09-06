@@ -826,7 +826,7 @@ class Plotter:
         '''
         ### No auto ###
         if self.text_pos == 'auto': 
-            if 'TH2' in self.objs[0].ClassName():
+            if self.is_2d:
                 self.text_pos = 'topleft'
         if self.text_pos != 'auto': return
         if not self.has_text(): return
@@ -1019,7 +1019,7 @@ class Plotter:
     def draw(self, **kwargs):
         if not self.compiled:
             self.args.update(kwargs)
-            self.compile(**self.args)
+            self._compile(**self.args)
         self._draw_all()  
 
     def draw_marker(self, x, y, axes_units=False):
