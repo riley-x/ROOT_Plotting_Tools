@@ -693,7 +693,7 @@ class Plotter:
     def _default_legend_opt(self, opts, i):
         opt = ''
         plot_opt = _arg(opts, i)
-        if 'HIST' in plot_opt or 'L' in plot_opt:
+        if 'HIST' in plot_opt or 'L' in plot_opt or 'C' in plot_opt:
             opt += 'L'
         if 'P' in plot_opt or 'E' in plot_opt:
             opt += 'PE'
