@@ -239,7 +239,7 @@ class Plotter:
     '''
 
     def __init__(self, pad,
-        objs=[],  
+        objs=None,  
         text_pos='auto', 
         title_size=0.05, text_size=0.035, text_spacing=1, text_back_color=None,
         text_offset_left=0.05, text_offset_right=0.05, text_offset_top=0.05, text_offset_bottom=0.05,
@@ -248,20 +248,21 @@ class Plotter:
         **kwargs
     ):
         ### Initialize ###
-        self.frame = None
+        self.frame = _frame
         self.objs = []          # ROOT TObjects to draw
         self.draw_opts = []     # ROOT plotting options, parallel to self.objs
         self.legend_items = []  # list of (obj, label, opt) for legend
         self.cache = []
         
+        self.compiled = False   # If False, need to call compile()
         self.is_2d = False
 
         ### Pad ###
         self.pad = pad
         self._set_pad_properties(**kwargs)
 
-        ### Text ###
-        # All sizes/positions are in pad units.
+        ### Titles ###
+        # All text sizes/positions are in pad units.
         self.text_pos = text_pos
         self.text_back_color = text_back_color
 
@@ -274,47 +275,47 @@ class Plotter:
         self.text_top = 1 - self.pad.GetTopMargin() - text_offset_top
         self.text_bottom = self.pad.GetBottomMargin() + text_offset_bottom
 
+        self._make_titles(**kwargs)
 
-
-
-        self.add(objs, **kwargs)
-
-
-
-
-        ### Range parsing ###
+        ### Axis ###
         if y_pad is not None:
             self.y_pad_bot = y_pad
             self.y_pad_top = y_pad
         else:
             self.y_pad_bot = y_pad_bot
             self.y_pad_top = y_pad_top
-        self.x_range = self._auto_x_range(**kwargs)
-        self.y_range = self._auto_y_range(**kwargs)
-        self.z_range = self._auto_z_range(**kwargs)
 
-        ### Frame ###
-        if _frame:
-            self.frame = _frame
-        else:
-            self._create_frame(**kwargs) # This needs x_range, but also sets the other ranges
-        _apply_frame_opts(self.frame, **kwargs)
+        ### Other ###
+        self.args = kwargs
 
+        ### Draw ###
+        # Shorcut: if objs is supplied to the constructor, draw immediately.
+        if objs: 
+            self.add(objs, **kwargs)
+            self._compile(**kwargs)
+            if _do_draw:
+                self.draw()
+
+    #####################################################################################
+    ###                                 PAD AND FRAME                                 ###
+    #####################################################################################
+
+    def _create_frame(self, **kwargs):
+        if self.x_range and self.y_range and not self.is_2d:
+            self.frame = ROOT.TH1F('h_frame', '', 1, *self.x_range)
+            self.frame.SetDirectory(0)
+        else: # use objs[0] as the frame to preserve default ROOT behavior 
+            self.frame = self.objs[0].Clone()
+            if self.x_range is not None:
+                if 'TGraph' in self.frame.ClassName():
+                    self.frame.GetXaxis().SetLimits(*self.x_range)
+                else:
+                    self.frame.GetXaxis().SetRangeUser(*self.x_range)
         
-
-        self._make_titles(**kwargs)
-        self._make_legend(**kwargs)
-
-        self._auto_text_pos_and_pad(**kwargs)
-        self._parse_text_pos(self.text_pos)
-        self._pad_y_range(**kwargs)
-
-        if _do_draw:
-            self._draw()
-
-    #####################################################################################
-    ###                                      PAD                                      ###
-    #####################################################################################
+        if self.y_range is not None:
+            self.frame.GetYaxis().SetRangeUser(*self.y_range)
+        if self.z_range is not None:
+            self.frame.GetZaxis().SetRangeUser(*self.z_range)
 
     def _set_pad_properties(self, logx=None, logy=None, logz=None, left_margin=None, right_margin=None, **kwargs):
         self.logy = logy
@@ -478,7 +479,7 @@ class Plotter:
 
 
     #####################################################################################
-    ###                                    OBJECTS                                    ###
+    ###                                MAIN PROCESSING                                ###
     #####################################################################################
 
     def add(self, objs, stack=False, opts='', **kwargs):
@@ -521,26 +522,28 @@ class Plotter:
         self.draw_opts.extend(draw_opts)
         self.legend_items.extend(legend_items)
 
-    def _create_frame(self, **kwargs):
-        if self.x_range and self.y_range and not self.is_2d:
-            self.frame = ROOT.TH1F('h_frame', '', 1, *self.x_range)
-            self.frame.SetDirectory(0)
-        else: # use objs[0] as the frame to preserve default ROOT behavior 
-            self.frame = self.objs[0].Clone()
-            if self.x_range is not None:
-                if 'TGraph' in self.frame.ClassName():
-                    self.frame.GetXaxis().SetLimits(*self.x_range)
-                else:
-                    self.frame.GetXaxis().SetRangeUser(*self.x_range)
-        
-        if self.y_range is not None:
-            self.frame.GetYaxis().SetRangeUser(*self.y_range)
-        if self.z_range is not None:
-            self.frame.GetZaxis().SetRangeUser(*self.z_range)
+    def _compile(self, **kwargs):
+        '''
+        This function should be called after all [add] calls. This will calculate ranges,
+        make the legend, and place the text.
+        '''
+        self.compiled = True
 
-    def _format_objs(self, **kwargs):
-        for i,obj in enumerate(self.objs):
-            _apply_common_opts(obj, i, **kwargs)
+        ### Range parsing ###
+        self.x_range = self._auto_x_range(**kwargs)
+        self.y_range = self._auto_y_range(**kwargs)
+        self.z_range = self._auto_z_range(**kwargs)
+
+        ### Frame ###
+        if self.frame is None:
+            self._create_frame(**kwargs) # This needs x_range, but also sets the other ranges
+        _apply_frame_opts(self.frame, **kwargs)
+
+        ### Legend and Text ###
+        self._make_legend(**kwargs)
+        self._auto_text_pos_and_pad(**kwargs)
+        self._parse_text_pos(self.text_pos)
+        self._pad_y_range(**kwargs)
 
 
     #####################################################################################
@@ -728,7 +731,8 @@ class Plotter:
 
     def _make_legend(self, legend_columns=1, **kwargs):
         '''
-        Creates a ROOT.TLegend with entries added. Also measures the legend sizing.
+        Creates a ROOT.TLegend with entries from [self.legend_items]. Also measures the 
+        legend sizing.
 
         @sets
             self.legend
@@ -990,7 +994,7 @@ class Plotter:
             if 'TGraph' in obj.ClassName() and '2+' in opt: # Specify 2+ to draw both error rectangles and bars
                 obj.Draw(opt.replace('2+', ''))
     
-    def _draw(self):
+    def _draw_all(self):
         if 'TGraph' in self.frame.ClassName():
             self.frame.Draw('A')
         else:
@@ -999,6 +1003,11 @@ class Plotter:
 
         for tex in self.titles: tex.Draw()
         if self.legend: self.legend.Draw()
+
+    def draw(self, **kwargs):
+        if not self.compiled:
+            self.compile(**kwargs)
+        self._draw_all()  
 
     def draw_marker(self, x, y, axes_units=False):
         '''
@@ -1023,6 +1032,8 @@ class Plotter:
 
     def draw_outliers(self):
         self.cache.append(_outliers(self.frame, self.objs))
+
+
 
 ##############################################################################
 ###                                 HELPERS                                ###
