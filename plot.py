@@ -737,8 +737,7 @@ class Plotter:
             self.legend_rows
             self.legend_columns
         '''
-        legend_items = self._get_legend_list(**kwargs)
-        if not legend_items:
+        if not self.legend_items:
             self.legend = None
             self.legend_height = 0
             self.legend_width = 0
@@ -750,9 +749,9 @@ class Plotter:
         # These are in pad units, i.e. fraction of pad width
         leg_symbol_width = 0.05 # Symbol size
         leg_symbol_pad = 0.01   # Whitespace between symbol and label
-        leg_label_width = self._max_legend_label_width(legend_items)
+        leg_label_width = self._max_legend_label_width(self.legend_items)
         self.legend_columns = legend_columns
-        self.legend_rows = math.ceil(len(legend_items) / legend_columns)
+        self.legend_rows = math.ceil(len(self.legend_items) / legend_columns)
         self.legend_width = (leg_symbol_width + leg_symbol_pad + leg_label_width) * legend_columns
         self.legend_height = self.text_size * self.legend_rows + self.text_spacing * (self.legend_rows - 1)
 
@@ -765,7 +764,7 @@ class Plotter:
         self.legend.SetTextSize(self.text_size)
         self.legend.SetTextFont(42) # Default ATLAS font
         self.legend.SetNColumns(legend_columns)
-        for i in legend_items:
+        for i in self.legend_items:
             self.legend.AddEntry(*i)
 
     def _place_legend(self, x, y, align):
@@ -970,11 +969,7 @@ class Plotter:
     #####################################################################################
 
     def _draw_objs(self):
-        it = enumerate(self.objs)
-        if self.stack: it = reversed(it)
-        
-        for i,obj in it:
-            opt = _arg(self.opts, i)
+        for i,(obj,opt) in enumerate(zip(self.objs, self.draw_opts)):
             if opt is None: continue
             opt = 'SAME ' + opt 
 
