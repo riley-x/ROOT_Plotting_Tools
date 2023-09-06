@@ -549,7 +549,7 @@ class Plotter:
 
         ### Frame ###
         if self.frame is None:
-            self._create_frame(**kwargs) # This needs x_range, but also sets the other ranges
+            self._create_frame(**kwargs) # This needs x_range
         self._set_frame_ranges()
         _apply_frame_opts(self.frame, **kwargs)
 
