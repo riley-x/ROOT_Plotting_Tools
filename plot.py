@@ -312,22 +312,23 @@ class Plotter:
     ###                                 PAD AND FRAME                                 ###
     #####################################################################################
 
+    def _set_frame_ranges(self):
+        if self.x_range is not None:
+            if 'TGraph' in self.frame.ClassName():
+                self.frame.GetXaxis().SetLimits(*self.x_range)
+            else:
+                self.frame.GetXaxis().SetRangeUser(*self.x_range)
+        if self.y_range is not None:
+            self.frame.GetYaxis().SetRangeUser(*self.y_range)
+        if self.z_range is not None:
+            self.frame.GetZaxis().SetRangeUser(*self.z_range)
+
     def _create_frame(self, **kwargs):
         if self.x_range and self.y_range and not self.is_2d:
             self.frame = ROOT.TH1F('h_frame', '', 1, *self.x_range)
             self.frame.SetDirectory(0)
         else: # use objs[0] as the frame to preserve default ROOT behavior 
             self.frame = self.objs[0].Clone()
-            if self.x_range is not None:
-                if 'TGraph' in self.frame.ClassName():
-                    self.frame.GetXaxis().SetLimits(*self.x_range)
-                else:
-                    self.frame.GetXaxis().SetRangeUser(*self.x_range)
-        
-        if self.y_range is not None:
-            self.frame.GetYaxis().SetRangeUser(*self.y_range)
-        if self.z_range is not None:
-            self.frame.GetZaxis().SetRangeUser(*self.z_range)
 
     def _set_pad_properties(self, logx=None, logy=None, logz=None, left_margin=None, right_margin=None, **kwargs):
         self.logy = logy
@@ -549,6 +550,7 @@ class Plotter:
         ### Frame ###
         if self.frame is None:
             self._create_frame(**kwargs) # This needs x_range, but also sets the other ranges
+        self._set_frame_ranges()
         _apply_frame_opts(self.frame, **kwargs)
 
         ### Legend and Text ###
