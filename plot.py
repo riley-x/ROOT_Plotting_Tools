@@ -239,7 +239,7 @@ class Plotter:
     '''
 
     def __init__(self, pad,
-        objs=[], opts='', stack=False, 
+        objs=[],  
         text_pos='auto', 
         title_size=0.05, text_size=0.035, text_spacing=1, text_back_color=None,
         text_offset_left=0.05, text_offset_right=0.05, text_offset_top=0.05, text_offset_bottom=0.05,
@@ -247,18 +247,40 @@ class Plotter:
         _do_draw=True, _frame=None,
         **kwargs
     ):
-        ### Objs ###
-        self.objs = list(objs)
-        self.is_2d = self.objs and 'TH2' in self.objs[0].ClassName()
-        self.opts = opts
-        self.stack = stack
+        ### Initialize ###
         self.frame = None
+        self.objs = []          # ROOT TObjects to draw
+        self.draw_opts = []     # ROOT plotting options, parallel to self.objs
+        self.legend_items = []  # list of (obj, label, opt) for legend
         self.cache = []
-        if stack: self._make_stack()
+        
+        self.is_2d = False
 
         ### Pad ###
         self.pad = pad
         self._set_pad_properties(**kwargs)
+
+        ### Text ###
+        # All sizes/positions are in pad units.
+        self.text_pos = text_pos
+        self.text_back_color = text_back_color
+
+        self.title_size = title_size
+        self.text_size = text_size
+        self.text_spacing = text_size * text_spacing * 0.15
+
+        self.text_left = self.pad.GetLeftMargin() + text_offset_left
+        self.text_right = 1 - self.pad.GetRightMargin() - text_offset_right
+        self.text_top = 1 - self.pad.GetTopMargin() - text_offset_top
+        self.text_bottom = self.pad.GetBottomMargin() + text_offset_bottom
+
+
+
+
+        self.add(objs, **kwargs)
+
+
+
 
         ### Range parsing ###
         if y_pad is not None:
@@ -277,24 +299,8 @@ class Plotter:
         else:
             self._create_frame(**kwargs) # This needs x_range, but also sets the other ranges
         _apply_frame_opts(self.frame, **kwargs)
+
         
-        ### Object styles ###
-        for i,obj in enumerate(self.objs):
-            _apply_common_opts(obj, i, **kwargs)
-
-        ### Text and Legend ###
-        # Sizes and positions are all in pad units.
-        self.text_pos = text_pos
-        self.text_back_color = text_back_color
-
-        self.title_size = title_size
-        self.text_size = text_size
-        self.text_spacing = text_size * text_spacing * 0.15
-
-        self.text_left = self.pad.GetLeftMargin() + text_offset_left
-        self.text_right = 1 - self.pad.GetRightMargin() - text_offset_right
-        self.text_top = 1 - self.pad.GetTopMargin() - text_offset_top
-        self.text_bottom = self.pad.GetBottomMargin() + text_offset_bottom
 
         self._make_titles(**kwargs)
         self._make_legend(**kwargs)
@@ -318,13 +324,16 @@ class Plotter:
         if logz is not None: self.pad.SetLogz(logz)
         if left_margin is not None: self.pad.SetLeftMargin(left_margin)
         if right_margin is None:
-            if 'ztitle' in kwargs:
-                right_margin = 0.2
-            elif self.is_2d and 'Z' in _arg(self.opts, 0):
-                right_margin = 0.13
-            else:
-                right_margin = 0.05
-        self.pad.SetRightMargin(right_margin)
+            self.auto_right_margin = True
+            # if 'ztitle' in kwargs:
+            #     right_margin = 0.2
+            # elif self.is_2d and 'Z' in _arg(self.opts, 0):
+            #     right_margin = 0.13
+            # else:
+            #     right_margin = 0.05
+        else:
+            self.auto_right_margin = False
+            self.pad.SetRightMargin(right_margin)
 
     def user_to_axes(self, x, y):
         return user_to_axes(self.pad, self.frame, (x, y))
@@ -469,24 +478,48 @@ class Plotter:
 
 
     #####################################################################################
-    ###                                     HISTS                                     ###
+    ###                                    OBJECTS                                    ###
     #####################################################################################
 
-    def _make_stack(self):
+    def add(self, objs, stack=False, opts='', **kwargs):
         '''
-        Assumes self.objs is a list of TH1s, and adds them cumulatively to create a list
-        of stack histograms insteads.
+        Adds a list of objects to the plotter.
+
+        @param stack
+            If True, [objs] must be a list of TH1s that will be added into a stack. No
+            other objects should be included.
 
         @modifies
             self.objs
+            self.draw_opts
+            self.legend_items
         '''
-        new_objs = []
-        for i,obj in enumerate(self.objs):
-            obj = obj.Clone()
-            if len(new_objs) > 0:
-                obj.Add(new_objs[-1])
-            new_objs.append(obj)
-        self.objs = new_objs
+        if not objs: return
+        if not self.objs:
+            self.is_2d = 'TH2' in objs[0].ClassName()
+        if stack:
+            objs = _make_stack(objs)
+
+        ### Styles ###
+        draw_opts = []
+        for i,obj in enumerate(objs):
+            _apply_common_opts(obj, i, **kwargs)
+            draw_opts.append(_arg(opts, i))
+
+        ### Legend ###
+        legend_items = self._get_legend_list(objs, draw_opts, **kwargs)
+
+        ### Plot stack in reverse order ###
+        if stack: 
+            objs.reverse()
+            draw_opts.reverse()
+            if 'legend_order' not in kwargs:
+                legend_items.reverse()
+
+        ### Output ###
+        self.objs.extend(objs)
+        self.draw_opts.extend(draw_opts)
+        self.legend_items.extend(legend_items)
 
     def _create_frame(self, **kwargs):
         if self.x_range and self.y_range and not self.is_2d:
@@ -640,16 +673,16 @@ class Plotter:
     ###                                    LEGEND                                     ###
     #####################################################################################
 
-    def _default_legend_opt(self, i):
+    def _default_legend_opt(self, opts, i):
         opt = ''
-        plot_opt = _arg(self.opts, i)
+        plot_opt = _arg(opts, i)
         if 'HIST' in plot_opt or 'L' in plot_opt:
             opt += 'L'
         if 'P' in plot_opt or 'E' in plot_opt:
             opt += 'PE'
         return opt
 
-    def _get_legend_list(self, legend='auto', legend_order=None, legend_opts=None, **kwargs):
+    def _get_legend_list(self, objs, opts, legend='auto', legend_order=None, legend_opts=None, **_):
         '''
         Returns a list of (obj, label, opt).
         '''
@@ -658,27 +691,25 @@ class Plotter:
 
         ### Auto legend ###
         if legend == 'auto':
-            if len(self.objs) < 2: return []
-            legend = [x.GetName() for x in self.objs] # use list machinery below
+            if len(objs) < 2: return []
+            legend = [x.GetName() for x in objs] # use list machinery below
 
         ### Custom legend ###
         if not isinstance(legend[0], str): return legend
 
         ### List of labels ###
-        if len(legend) != len(self.objs):
-            raise RuntimeError(f'Plotter._make_legend() mismatched lengths. Got {len(legend)}, expected {len(self.objs)}.')
+        if len(legend) != len(objs):
+            raise RuntimeError(f'Plotter._make_legend() mismatched lengths. Got {len(legend)}, expected {len(objs)}.')
         if legend_opts is None:
-            legend_opts = self._default_legend_opt
+            legend_opts = lambda i: self._default_legend_opt(opts, i)
 
         out = []
-        for i,(obj,label) in enumerate(zip(self.objs, legend)):
+        for i,(obj,label) in enumerate(zip(objs, legend)):
             out.append([obj, label, _arg(legend_opts, i)])
 
         ### Reorder ###
         if legend_order: 
             out = [out[i] for i in legend_order]
-        elif self.stack:
-            out.reverse()
         out = [x for x in out if x[1] and x[2]] # filter empty labels/opts
 
         return out
@@ -1199,7 +1230,7 @@ def _apply_frame_opts(obj, **kwargs):
 
 
 
-### OUTLIERS ###
+### MISC ###
 
 def _outliers(frame, hists):
     '''
@@ -1231,6 +1262,19 @@ def _outliers(frame, hists):
                 markers.append(m)
 
     return markers
+
+def _make_stack(objs):
+        '''
+        Assumes objs is a list of TH1s, and adds them cumulatively to create a list
+        of stack histograms insteads.
+        '''
+        new_objs = []
+        for i,obj in enumerate(objs):
+            obj = obj.Clone()
+            if len(new_objs) > 0:
+                obj.Add(new_objs[-1])
+            new_objs.append(obj)
+        return new_objs
 
 
 ##############################################################################
