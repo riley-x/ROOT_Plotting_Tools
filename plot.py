@@ -225,12 +225,24 @@ save_transparent = True
 
 class Plotter:
     '''
-    Main plotting class. Initializing this class draws the full plot; the class object
-    is merely used to store drawn objects, configurations, etc. Usually you should not 
-    bother with this class itself and use the wrapper functions instead.
+    Main plotting class. Usually you should not bother with this class itself 
+    and use the wrapper functions instead.
     
-    See this file's docstring for configuration options, that can be passed to the init-
-    ializer in kwargs. 
+    The main workflow is:
+    1. __init__()
+        Sets the pad and title text configuration.
+    2. add()
+        Adds a list of ROOT objects to the draw stack, with formatting and legend. This
+        function can be called repeatedly. 
+    3. draw()
+        Processes object-dependent configuration, such as auto ranging and text placement,
+        and draws all objects in the draw stack.
+
+    An optional shortcut is to supply the [objs] arguement to __init__(), which will call
+    the other steps automatically.  
+    
+    See this file's docstring for configuration options, that can be passed in kwargs to
+    the various functions. 
 
     @param _do_draw
         Skip draw if false
@@ -1006,7 +1018,8 @@ class Plotter:
 
     def draw(self, **kwargs):
         if not self.compiled:
-            self.compile(**kwargs)
+            self.args.update(kwargs)
+            self.compile(**self.args)
         self._draw_all()  
 
     def draw_marker(self, x, y, axes_units=False):
