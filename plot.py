@@ -1382,14 +1382,11 @@ def get_text_size(text, text_size):
 ##############################################################################
 
 
-def _plot(c, objs, canvas_callback=None, frame_callback=None, **kwargs):
+def _plot(c, objs, callback=None, **kwargs):
     plotter = Plotter(c, objs=objs, **kwargs)
-    if canvas_callback: 
-        plotter.cache.append(canvas_callback(c))
-    if frame_callback: 
-        plotter.cache.append(frame_callback(plotter.frame))
+    if callback: 
+        callback(plotter)
     return plotter
-
 
 
 def plot(objs, canvas_size=(1000,800), canvas_name='c1', **kwargs):
@@ -1459,7 +1456,7 @@ def _draw_horizontal_line(pos, frame):
     return line
 
 
-def plot_ratio(hists1, hists2, height1=0.7, outlier_arrows=True, hline=None, axes_callback=None, save_plot=True, **kwargs):
+def plot_ratio(hists1, hists2, height1=0.7, outlier_arrows=True, hline=None, callback=None, save_plot=True, **kwargs):
     '''
     Plots [hists1] in a main pad on top and [hists2] in a secondary pad below. The two 
     sets of objects should share the same x axis. Set options in the secondary pad by 
@@ -1517,15 +1514,15 @@ def plot_ratio(hists1, hists2, height1=0.7, outlier_arrows=True, hline=None, axe
     if outlier_arrows: cache.append(_outliers(plotter2.frame, hists2))
 
     ### Callback ###
-    if axes_callback:
-        axes_callback(hists1[0], hists2[0])
+    if callback:
+        callback(plotter1, plotter2)
     if save_plot:
         save_canvas(c, kwargs.get('filename', hists1[0].GetName()))
     
     return c, cache
 
 
-def plot_ratio3(hists1, hists2, hists3, height1=0.55, outlier_arrows=True, hline2=None, hline3=None, axes_callback=None, save_plot=True, **kwargs):
+def plot_ratio3(hists1, hists2, hists3, height1=0.55, outlier_arrows=True, hline2=None, hline3=None, callback=None, save_plot=True, **kwargs):
     '''
     A ratio plot with two ancillary pads. Plots [hists1] in a main pad on top and 
     [hists2] and [hists3] in the middle and bottom ancillary pads respectively. The 
@@ -1573,7 +1570,7 @@ def plot_ratio3(hists1, hists2, hists3, height1=0.55, outlier_arrows=True, hline
     cache.append(plotter1)
     pad1.RedrawAxis() # Make the tick marks go above any fill
 
-    ### Draw first ratio plot
+    ### Draw first ratio plot ###
     args2 = { 
         'ydivs': 204, 
         'ignore_outliers_y': 3, 
@@ -1619,8 +1616,8 @@ def plot_ratio3(hists1, hists2, hists3, height1=0.55, outlier_arrows=True, hline
     _fix_axis_sizing(plotter3.frame, pad3, **args3)
 
     ### Callback ###
-    if axes_callback:
-        axes_callback(plotter1.frame, plotter2.frame, plotter3.frame)
+    if callback:
+        callback(plotter1, plotter2, plotter3)
     if save_plot:
         save_canvas(c, kwargs.get('filename', hists1[0].GetName()))
 
@@ -1863,7 +1860,6 @@ def plot_3panel(hists1, hists2, hists3, **kwargs):
         kwargs.setdefault(key, val)
         kwargs.setdefault(key + '2', kwargs[key]) # use the value set by the user, if present
         kwargs.setdefault(key + '3', kwargs[key])
-    kwargs.setdefault('textpos', 'topsplit')
     kwargs.setdefault('height1', 0.4)
     setdefault_all('ydivs', 504)
 
