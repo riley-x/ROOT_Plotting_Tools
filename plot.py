@@ -879,11 +879,12 @@ class Plotter:
                 self.pad_to_axes_x(tex.GetX() + tex.GetXsize()),
                 self.pad_to_axes_y(tex.GetY()), # all text is bottom-aligned
             ))
-        occlusions.append((
-            self.pad_to_axes_x(self.legend.GetX1()),
-            self.pad_to_axes_x(self.legend.GetX2()),
-            self.pad_to_axes_y(self.legend.GetY1()), 
-        ))
+        if self.legend is not None:
+            occlusions.append((
+                self.pad_to_axes_x(self.legend.GetX1()),
+                self.pad_to_axes_x(self.legend.GetX2()),
+                self.pad_to_axes_y(self.legend.GetY1()), 
+            ))
 
         ### Iterate over data points ###
         max_pad = 0
