@@ -255,6 +255,7 @@ class Plotter:
         text_pos='auto', 
         title_size=0.05, text_size=0.035, text_spacing=1, text_back_color=None,
         text_offset_left=0.05, text_offset_right=0.05, text_offset_top=0.05, text_offset_bottom=0.05,
+        legend_height=1,
         y_pad=None, y_pad_bot=0.05, y_pad_top=0.05, 
         _do_draw=True, _frame=None,
         **kwargs
@@ -286,6 +287,8 @@ class Plotter:
         self.text_right = 1 - self.pad.GetRightMargin() - text_offset_right
         self.text_top = 1 - self.pad.GetTopMargin() - text_offset_top
         self.text_bottom = self.pad.GetBottomMargin() + text_offset_bottom
+
+        self.legend_height_scale = legend_height
 
         self._make_titles(**kwargs)
 
@@ -772,6 +775,7 @@ class Plotter:
         self.legend_rows = math.ceil(len(self.legend_items) / legend_columns)
         self.legend_width = (leg_symbol_width + leg_symbol_pad + leg_label_width) * legend_columns
         self.legend_height = self.text_size * self.legend_rows + self.text_spacing * (self.legend_rows - 1)
+        self.legend_height *= self.legend_height_scale
 
         ### Legend ###
         self.legend = ROOT.TLegend()
