@@ -852,7 +852,7 @@ class Plotter:
             data_locs_axes.append(self.user_to_axes(x, y))
 
         ### Test different textpos ###
-        test_pos = ['top', 'top reverse', 'topleft', 'topright'] # list of textpos options to test
+        test_pos = ['top', 'top reverse', 'topleft', 'topright'] # list of textpos options to test (in order of priority)
         min_pad = None
         min_pad_pos = 'top'
 
