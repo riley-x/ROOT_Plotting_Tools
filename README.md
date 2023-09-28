@@ -1,4 +1,4 @@
-# Riley's declarative ROOT plotting toolkit
+# A Declarative ROOT Plotting Framework
 
 Plotting in ROOT is really annoying. You have to remember to call `"SAME"` everywhere,
 axis limits are highly unintuitive, and so on. This module attempts to make ROOT
@@ -26,6 +26,22 @@ ranges, automatic legend placement, title text and subtext, etc. It also defines
 functions to make some common plot types, like ratio plots.
 
 **Please see the docstring in `plot.py` for a full list of functions and options.**
+
+## Installation
+
+Just copy the `plot.py` file to your working directory and call
+```py
+import plot
+```
+
+Alternatively, you can clone/submodule this repo:
+```sh
+git submodule add git@github.com:riley-x/ROOT_Plotting_Tools.git rplottools
+```
+And in your python script:
+```py
+from rplottools import plot
+```
 
 ## Saving Images
 
