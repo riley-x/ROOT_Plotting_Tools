@@ -188,10 +188,36 @@ legend_columns                                          default: 1
 
 
 -----------------------------------------------------------------------------------------
+COLORS
+-----------------------------------------------------------------------------------------
+See the color class docstring for more info, and the class implementation for a full list
+of colors.
+-----------------------------------------------------------------------------------------
+Colormaps:
+    colors.tableu: Matplotlib 'tableau' colormap
+    colors.pastel: Matplotlib 'Pastel1' colormap
+
+
+
+-----------------------------------------------------------------------------------------
 UTILITY FUNCTIONS
 -----------------------------------------------------------------------------------------
 See each function's docstring for more info. There are many more than listed here too.
 -----------------------------------------------------------------------------------------
+
+HISTOGRAM MANIPULATION
+-----------------------------------------------------
+normalize
+    Normalizes a histogram in multiple ways, such as forcing it to have unit area, or 
+    convert it into a cumulative distribution.
+rebin2d
+    Rebins a 2D histogram with variable bins on each axis.
+undo_width_scaling
+    Undoes the scaling from h.Scale(1, 'width')
+
+
+OTHER
+-----------------------------------------------------
 colors_from_palette
     Returns a list of equally spaced colors from a ROOT palette.
 save_canvas_transparent
@@ -199,10 +225,7 @@ save_canvas_transparent
     variable [plot.save_transparent] to True to enable in the plot functions above.
 format
     Automatically formats a list of TObjects. 
-normalize
-    Normalizes a histogram in multiple ways.
-rebin2d
-    Rebins a 2D histogram with variable bins on each axis.
+
 '''
 
 import ROOT
@@ -2384,6 +2407,17 @@ def reduced_legend_hists(shape, opts=None):
 ###                               UTILITIES                                ###
 ##############################################################################
 
+
+def undo_width_scaling(h):
+    '''
+    Given a histogram scaled by its bin width, i.e. via `h.Scale(1, 'width')`,
+    undoes this scaling. Returns the same histogram, modified in-place.
+    '''
+    for i in range(len(h)):
+        w = h.GetBinWidth(i)
+        h.SetBinContent(i, h.GetBinContent(i) * w)
+        h.SetBinError(i, h.GetBinError(i) * w)
+    return h
 
 def normalize(h, mode="integral"):
     '''
