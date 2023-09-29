@@ -524,6 +524,8 @@ class Plotter:
             draw_opts.append(_arg(opts, i))
 
         ### Legend ###
+        if stack and 'legend_opts' not in kwargs:
+            kwargs['legend_opts'] = 'F'
         legend_items = self._get_legend_list(objs, draw_opts, **kwargs)
 
         ### Plot stack in reverse order ###
@@ -700,7 +702,7 @@ class Plotter:
             opt += 'L'
         if 'P' in plot_opt or 'E' in plot_opt:
             opt += 'PE'
-        return opt
+        return opt or 'L'
 
     def _get_legend_list(self, objs, opts, legend='auto', legend_order=None, legend_opts=None, **_):
         '''
