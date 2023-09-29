@@ -273,14 +273,15 @@ class Plotter:
         ### Pad ###
         self.pad = pad
         self._set_pad_properties(**kwargs)
+        pad_height = pad.GetHNDC()
 
         ### Titles ###
         # All text sizes/positions are in pad units.
         self.text_pos = text_pos
         self.text_back_color = text_back_color
 
-        self.title_size = title_size
-        self.text_size = text_size
+        self.title_size = title_size / pad_height
+        self.text_size = text_size / pad_height
         self.text_spacing = text_size * text_spacing * 0.15
 
         self.text_left = self.pad.GetLeftMargin() + text_offset_left
@@ -332,6 +333,7 @@ class Plotter:
             self.frame.SetDirectory(0)
         else: # use objs[0] as the frame to preserve default ROOT behavior 
             self.frame = self.objs[0].Clone()
+        _fix_axis_sizing(self.frame, self.pad, **kwargs)
 
     def _set_pad_properties(self, logx=None, logy=None, logz=None, left_margin=None, right_margin=None, **kwargs):
         self.logy = logy
@@ -1026,15 +1028,18 @@ class Plotter:
         if self.legend: self.legend.Draw()
 
     def draw(self, **kwargs):
+        self.pad.cd() # Make sure this is before _compile! So that textsizes are accurate.
         if not self.compiled:
             self.args.update(kwargs)
             self._compile(**self.args)
-        self._draw_all()  
+        self._draw_all()
+        self.pad.RedrawAxis()
 
     def draw_marker(self, x, y, axes_units=False):
         '''
         @param axes - If true x and y are in axes units, otherwise they are in user units
         '''
+        self.pad.cd()
         if axes_units:
             x, y = self.axes_to_pad(x, y)
             m = ROOT.TMarker(x, y, ROOT.kFullSquare)
@@ -1047,12 +1052,14 @@ class Plotter:
     def draw_hline(self, y, style=ROOT.kSolid):
         # TODO this will still draw the line out of the axes if y is not in yrange
         if y is None: return
+        self.pad.cd()
         line = ROOT.TLine(self.x_range[0], y, self.x_range[1], y)
         line.SetLineStyle(style)
         line.Draw()
         self.cache.append(line)
 
     def draw_outliers(self):
+        self.pad.cd()
         self.cache.append(_outliers(self.frame, self.objs))
 
 
@@ -1260,6 +1267,44 @@ def _apply_frame_opts(obj, **kwargs):
 
 ### MISC ###
 
+def _fix_axis_sizing(h, pad, 
+    remove_x_labels=False, 
+    text_size=0.05,
+    title_offset_x=1.4,
+    title_offset_y=1.4,
+    tick_length_x=0.015,
+    tick_length_y=0.03,
+    xlabeloffset=0.005, 
+    xlabelsize=0.05, 
+    **_
+):
+    '''
+    Fixes various axes sizing issues when you have multiple pads, since ROOT sizes 
+    things based on the pad size not the canvas size.
+    '''
+    height = pad.GetHNDC()
+
+    if remove_x_labels:
+        h.GetXaxis().SetLabelOffset(999)
+        h.GetXaxis().SetLabelSize(0)
+        h.GetXaxis().SetTitleSize(0)
+    else:
+        h.GetXaxis().SetLabelOffset(xlabeloffset)
+        h.GetXaxis().SetLabelSize(xlabelsize / height)
+        h.GetXaxis().SetTitleSize(text_size / height)
+        h.GetXaxis().SetTitleOffset(1)
+
+    h.GetYaxis().SetLabelSize(text_size / height)
+    h.GetYaxis().SetTitleSize(text_size / height)
+    h.GetYaxis().SetTitleOffset(title_offset_y * height)
+
+    height -= height * (pad.GetBottomMargin() + pad.GetTopMargin())
+    h.GetXaxis().SetTickLength(tick_length_x / height) 
+    h.GetYaxis().SetTickLength(tick_length_y / (1 - pad.GetTopMargin() - pad.GetBottomMargin())) 
+    # See https://root-forum.cern.ch/t/inconsistent-tick-length/18563/9
+    # The tick scale is affected by the margins: tick_length = pixel_size / ((pad2H - marginB - marginT) / pad2H * pad2W)
+    # Note there seems to be a minimum tick length for the y axis...
+
 def _outliers(frame, hists):
     '''
     Draws outlier arrows for points that aren't in the yrange of the graph. 
@@ -1417,41 +1462,6 @@ def _copy_ratio_args(plotter, args, postfix):
     return out
 
 
-def _fix_axis_sizing(h, pad, remove_x_labels=False, xlabeloffset=0.005, xlabelsize=0.05, **kwargs):
-    '''
-    Fixes various axes sizing issues when you have multiple pads, since ROOT sizes 
-    things based on the pad size not the canvas size.
-    '''
-    old_size = 0.05    
-    old_offset_x = 1.4 
-    old_offset_y = 1.4 
-    tick_length_x = 0.015
-    tick_length_y = 0.03
-
-    height = pad.GetHNDC()
-
-    if remove_x_labels:
-        h.GetXaxis().SetLabelOffset(999)
-        h.GetXaxis().SetLabelSize(0)
-        h.GetXaxis().SetTitleSize(0)
-    else:
-        h.GetXaxis().SetLabelOffset(xlabeloffset)
-        h.GetXaxis().SetLabelSize(xlabelsize / height)
-        h.GetXaxis().SetTitleSize(old_size / height)
-        h.GetXaxis().SetTitleOffset(1)
-
-    h.GetYaxis().SetLabelSize(old_size / height)
-    h.GetYaxis().SetTitleSize(old_size / height)
-    h.GetYaxis().SetTitleOffset(old_offset_y * height)
-
-    height -= height * (pad.GetBottomMargin() + pad.GetTopMargin())
-    h.GetXaxis().SetTickLength(tick_length_x / height) 
-    h.GetYaxis().SetTickLength(tick_length_y / (1 - pad.GetTopMargin() - pad.GetBottomMargin())) 
-    # See https://root-forum.cern.ch/t/inconsistent-tick-length/18563/9
-    # The tick scale is affected by the margins: tick_length = pixel_size / ((pad2H - marginB - marginT) / pad2H * pad2W)
-    # Note there seems to be a minimum tick length for the y axis...
-
-
 def _draw_horizontal_line(pos, frame):
     # TODO this will still draw the line out of the axes if pos is not in yrange
     if pos is None: return
@@ -1512,11 +1522,7 @@ def plot_ratio(hists1, hists2, height1=0.7, outlier_arrows=True, hline=None, cal
 
     ### Draw y=1 line ###
     cache.append(_draw_horizontal_line(hline, plotter2.frame))
-    
-    ### Fix axes sizing ### 
-    _fix_axis_sizing(plotter1.frame, pad1, True)
-    _fix_axis_sizing(plotter2.frame, pad2)
-    
+        
     ### Draw out-of-bounds arrows ###
     if outlier_arrows: cache.append(_outliers(plotter2.frame, hists2))
 

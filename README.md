@@ -76,6 +76,7 @@ or rebinning a 2D histogram with variable bins.
 <img src="./examples/basic_plot.png" style="max-height: 3in">
 
 
+
 ### Ratio Plot
 
 [Source](./examples/ratio_plot.py). Example with more complicated formatting and legend, with a ratio subplot.
@@ -83,11 +84,23 @@ or rebinning a 2D histogram with variable bins.
 <img src="./examples/ratio_plot.png" style="max-height: 3in">
 
 
+
+### Stack Plot
+
+[Source](./examples/stack_plot.py). Showcases both the 'stack' option and how to use the low-level plotter class 
+to do some advanced formatting.  
+
+<img src="./examples/stack_plot.png" style="max-height: 3in">
+
+
+
 ### Discrete Plot
 
 [Source](./examples/discrete_plot.py). This script showcases both `plot_discrete_bins()`, which plots histograms discretized in equal-width bins, and `plot_ratio3()`, which adds two subplots beneath the main plot.
 
 <img src="./examples/discrete_plot.png" style="max-height: 3in">
+
+
 
 
 ### Tiered Plot
