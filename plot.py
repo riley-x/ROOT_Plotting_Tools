@@ -720,13 +720,20 @@ class Plotter:
     ###                                    LEGEND                                     ###
     #####################################################################################
 
-    def _default_legend_opt(self, opts, i):
+    def _default_legend_opt(self, plot_opt):
+        '''
+        Returns the default legend option given a plotting option.
+        '''
         opt = ''
-        plot_opt = _arg(opts, i)
         if 'HIST' in plot_opt or 'L' in plot_opt or 'C' in plot_opt:
             opt += 'L'
-        if 'P' in plot_opt or 'E' in plot_opt:
-            opt += 'PE'
+        if 'P' in plot_opt: 
+            opt += 'P'
+        if 'E' in plot_opt:
+            if not 'P' in opt and not 'L' in opt:
+                opt += 'LE'
+            else:
+                opt += 'E'
         return opt or 'L'
 
     def _get_legend_list(self, objs, opts, legend='auto', legend_order=None, legend_opts=None, **_):
@@ -748,7 +755,7 @@ class Plotter:
         if len(legend) != len(objs):
             raise RuntimeError(f'Plotter._make_legend() mismatched lengths. Got {len(legend)}, expected {len(objs)}.')
         if legend_opts is None:
-            legend_opts = lambda i: self._default_legend_opt(opts, i)
+            legend_opts = lambda i: self._default_legend_opt(_arg(opts, i))
 
         out = []
         for i,(obj,label) in enumerate(zip(objs, legend)):
