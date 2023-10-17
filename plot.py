@@ -358,21 +358,16 @@ class Plotter:
             self.frame = self.objs[0].Clone()
         _fix_axis_sizing(self.frame, self.pad, **kwargs)
 
-    def _set_pad_properties(self, logx=None, logy=None, logz=None, left_margin=None, right_margin=None, **kwargs):
+    def _set_pad_properties(self, logx=None, logy=None, logz=None, left_margin=None, right_margin=None, bottom_margin=None, **kwargs):
         self.logy = logy
         self.pad.cd()
         if logx is not None: self.pad.SetLogx(logx)
         if logy is not None: self.pad.SetLogy(logy)
         if logz is not None: self.pad.SetLogz(logz)
+        if bottom_margin is not None: self.pad.SetBottomMargin(bottom_margin)
         if left_margin is not None: self.pad.SetLeftMargin(left_margin)
         if right_margin is None:
             self.auto_right_margin = True
-            # if 'ztitle' in kwargs:
-            #     right_margin = 0.2
-            # elif self.is_2d and 'Z' in _arg(self.opts, 0):
-            #     right_margin = 0.13
-            # else:
-            #     right_margin = 0.05
         else:
             self.auto_right_margin = False
             self.pad.SetRightMargin(right_margin)
@@ -1281,6 +1276,13 @@ def _apply_frame_opts(obj, **kwargs):
     if 'ztitle' in kwargs:
         obj.GetZaxis().SetTitle(kwargs['ztitle'])
 
+    if x := kwargs.get('x_label_offset'):
+        obj.GetXaxis().SetLabelOffset(x)
+    if x := kwargs.get('y_label_offset'):
+        obj.GetYaxis().SetLabelOffset(x)
+    if x := kwargs.get('z_label_offset'):
+        obj.GetZaxis().SetLabelOffset(x)
+
     if x := kwargs.get('ytitleoffset'):
         obj.GetYaxis().SetTitleOffset(x)
     if x := kwargs.get('ztitleoffset'):
@@ -1518,7 +1520,6 @@ def plot_ratio(hists1, hists2, height1=0.7, outlier_arrows=True, hline=None, cal
     '''
     c = ROOT.TCanvas("c1", "c1", 1000, 800)
     c.SetFillColor(colors.transparent_white)
-    cache = []
 
     ### Create pads
     height2 = 1 - height1
@@ -1536,25 +1537,23 @@ def plot_ratio(hists1, hists2, height1=0.7, outlier_arrows=True, hline=None, cal
     pad2.Draw()
 
     ### Draw main histo, get error histos
-    kwargs['title_size'] = kwargs.get('title_size', 0.05) / height1
-    kwargs['text_size'] = kwargs.get('text_size', 0.035) / height1
     kwargs.setdefault('text_offset_bottom', 0.07) 
     plotter1 = _plot(pad1, hists1, **kwargs)
-    cache.append(plotter1)
     pad1.RedrawAxis() # Make the tick marks go above any fill
 
     ### Draw ratio plot ###
     args2 = { 'ydivs': 504, 'ignore_outliers_y': 4, 'title': None, 'legend': None }
     args2.update(_copy_ratio_args(plotter1, kwargs, '2'))
     plotter2 = _plot(pad2, hists2, **args2)
-    cache.append(plotter2)
     pad2.RedrawAxis() # Make the tick marks go above any fill
 
     ### Draw y=1 line ###
-    cache.append(_draw_horizontal_line(hline, plotter2.frame))
+    if hline is not None:
+        plotter2.draw_hline(hline)
         
     ### Draw out-of-bounds arrows ###
-    if outlier_arrows: cache.append(_outliers(plotter2.frame, hists2))
+    if outlier_arrows: cache = _outliers(plotter2.frame, hists2)
+    else: cache = None
 
     ### Callback ###
     if callback:
@@ -1562,7 +1561,7 @@ def plot_ratio(hists1, hists2, height1=0.7, outlier_arrows=True, hline=None, cal
     if save_plot:
         save_canvas(c, kwargs.get('filename', hists1[0].GetName()))
     
-    return c, cache
+    return c, plotter1, plotter2, cache
 
 
 def plot_ratio3(hists1, hists2, hists3, height1=0.55, outlier_arrows=True, hline2=None, hline3=None, callback=None, save_plot=True, **kwargs):
