@@ -356,7 +356,6 @@ class Plotter:
             self.frame.SetDirectory(0)
         else: # use objs[0] as the frame to preserve default ROOT behavior 
             self.frame = self.objs[0].Clone()
-        _fix_axis_sizing(self.frame, self.pad, **kwargs)
 
     def _set_pad_properties(self, logx=None, logy=None, logz=None, left_margin=None, right_margin=None, bottom_margin=None, **kwargs):
         self.logy = logy
@@ -577,6 +576,7 @@ class Plotter:
             self._create_frame(**kwargs) # This needs x_range
         self._set_frame_ranges()
         _apply_frame_opts(self.frame, **kwargs)
+        _fix_axis_sizing(self.frame, self.pad, **kwargs)
 
         ### Legend and Text ###
         self._make_legend(**kwargs)
@@ -1074,12 +1074,33 @@ class Plotter:
         m.Draw()
         self.cache.append(m)
 
-    def draw_hline(self, y, style=ROOT.kSolid):
-        # TODO this will still draw the line out of the axes if y is not in yrange
+    def draw_hline(self, y, style=ROOT.kSolid, width=2, color=ROOT.kBlack):
+        '''
+        Draws a horizontal line at [y] through the entire pad's x range. Should be called
+        after [draw].
+
+        TODO this will still draw the line out of the axes if y is not in yrange
+        '''
         if y is None: return
         self.pad.cd()
         line = ROOT.TLine(self.x_range[0], y, self.x_range[1], y)
         line.SetLineStyle(style)
+        line.SetLineColor(color)
+        line.SetLineWidth(width)
+        line.Draw()
+        self.cache.append(line)
+
+    def draw_vline(self, x, style=ROOT.kSolid, width=2, color=ROOT.kBlack):
+        '''
+        Draws a vertical line at [x] through the entire pad's y range. Should be called
+        after [draw].
+        '''
+        if x is None: return
+        self.pad.cd()
+        line = ROOT.TLine(x, self.y_range[0], x, self.y_range[1])
+        line.SetLineStyle(style)
+        line.SetLineColor(color)
+        line.SetLineWidth(width)
         line.Draw()
         self.cache.append(line)
 
@@ -1276,18 +1297,6 @@ def _apply_frame_opts(obj, **kwargs):
     if 'ztitle' in kwargs:
         obj.GetZaxis().SetTitle(kwargs['ztitle'])
 
-    if x := kwargs.get('x_label_offset'):
-        obj.GetXaxis().SetLabelOffset(x)
-    if x := kwargs.get('y_label_offset'):
-        obj.GetYaxis().SetLabelOffset(x)
-    if x := kwargs.get('z_label_offset'):
-        obj.GetZaxis().SetLabelOffset(x)
-
-    if x := kwargs.get('ytitleoffset'):
-        obj.GetYaxis().SetTitleOffset(x)
-    if x := kwargs.get('ztitleoffset'):
-        obj.GetZaxis().SetTitleOffset(x)
-
     if 'xdivs' in kwargs:
         obj.GetXaxis().SetNdivisions(kwargs['xdivs'], True)
     if 'ydivs' in kwargs:
@@ -1306,8 +1315,8 @@ def _fix_axis_sizing(h, pad,
     title_offset_y=1.4,
     tick_length_x=0.015,
     tick_length_y=0.03,
-    xlabeloffset=0.005, 
-    xlabelsize=0.05, 
+    label_offset_x=0.005, 
+    label_size_x=0.05, 
     **_
 ):
     '''
@@ -1321,8 +1330,8 @@ def _fix_axis_sizing(h, pad,
         h.GetXaxis().SetLabelSize(0)
         h.GetXaxis().SetTitleSize(0)
     else:
-        h.GetXaxis().SetLabelOffset(xlabeloffset)
-        h.GetXaxis().SetLabelSize(xlabelsize / height)
+        h.GetXaxis().SetLabelOffset(label_offset_x)
+        h.GetXaxis().SetLabelSize(label_size_x / height)
         h.GetXaxis().SetTitleSize(text_size / height)
         h.GetXaxis().SetTitleOffset(1)
 
@@ -1538,6 +1547,7 @@ def plot_ratio(hists1, hists2, height1=0.7, outlier_arrows=True, hline=None, cal
 
     ### Draw main histo, get error histos
     kwargs.setdefault('text_offset_bottom', 0.07) 
+    kwargs.setdefault('remove_x_labels', True) 
     plotter1 = _plot(pad1, hists1, **kwargs)
     pad1.RedrawAxis() # Make the tick marks go above any fill
 
@@ -1552,8 +1562,7 @@ def plot_ratio(hists1, hists2, height1=0.7, outlier_arrows=True, hline=None, cal
         plotter2.draw_hline(hline)
         
     ### Draw out-of-bounds arrows ###
-    if outlier_arrows: cache = _outliers(plotter2.frame, hists2)
-    else: cache = None
+    if outlier_arrows: plotter2.cache.append(_outliers(plotter2.frame, hists2))
 
     ### Callback ###
     if callback:
@@ -1561,7 +1570,7 @@ def plot_ratio(hists1, hists2, height1=0.7, outlier_arrows=True, hline=None, cal
     if save_plot:
         save_canvas(c, kwargs.get('filename', hists1[0].GetName()))
     
-    return c, plotter1, plotter2, cache
+    return c, plotter1, plotter2
 
 
 def plot_ratio3(hists1, hists2, hists3, height1=0.55, outlier_arrows=True, hline2=None, hline3=None, callback=None, save_plot=True, **kwargs):
