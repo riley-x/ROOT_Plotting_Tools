@@ -146,9 +146,12 @@ y_pad_bot/top                                           default: 0.05
     If using an automatic y-axis range, amount of padding at the bottom/top so that the
     data points don't crowd the edges. Also useful to make room for titles and legends.
     The value is in axis coordinates, so a value of 0.05 on both bottom and top makes the
-    data only appear in the center 90% of the plot. 
+    data only appear in the center 90% of the axes. 
 
     If [text_pos] is set to 'auto', these options are treated as minimum padding instead.
+y_min/max                                               default: None
+    If using an automatic y-axis range, clamp the range to within the specified values.
+    Set to `None` to disable.  
 x_pad_left/right                                        default: 0
     If using an automatic x-axis range, amount of padding at the left/right so that the
     data points don't crowd the edges. The value is in axes coordinates, so a value of 
@@ -394,11 +397,12 @@ class Plotter:
         if self.is_2d: return kwargs.get('x_range')
         return _auto_x_range(objs=self.objs, **kwargs)
 
-    def _fix_bad_yticks(self, y_min, y_max, at_least_zero, ydivs=None, **kwargs):
+    def _fix_bad_yticks(self, y_min, y_max, pad_bot, pad_top, ydivs=None, **kwargs):
         '''
         When the number of ydivs is small, ROOT sometimes messes up the y axis ticks. 
         This function tries to fix this by just expanding the axis limits iteratively.
         '''
+        if pad_bot == 0 and pad_top == 0: return y_min, y_max
         if ydivs is not None and ydivs % 100 <= 5:
             for i in range(3): # try three times at most
                 # This is the funciton ROOT seems to use for the ticks
@@ -414,48 +418,64 @@ class Plotter:
                 if not need_fix: break
                     
                 diff = y_max - y_min
-                if self.auto_y_bot: y_min -= diff * 0.1
-                if self.auto_y_top: y_max += diff * 0.1
-                if at_least_zero: y_min = max(y_min, 0)
+                if pad_bot > 0: y_min -= diff * 0.1
+                if pad_top > 0: y_max += diff * 0.1
         return y_min, y_max
 
-    def _pad_y_range(self, at_least_zero=False, **kwargs):
+    def _get_padded_range(self, data_min, data_max, pad_bot, pad_top):
+        data_height = 1.0 - pad_bot - pad_top
+        diff = data_max - data_min
+        out_min = data_min - pad_bot * diff / data_height
+        out_max = data_max + pad_top * diff / data_height
+        return out_min, out_max
+
+    def _pad_y_range(self, y_min=None, y_max=None, **kwargs):
         '''
-        Updates [self.yrange] with extra padding, if using auto axis limits. Also resets
+        Updates [self.y_range] with extra padding, if using auto axis limits. Also resets
         the limits on [self.frame].
         '''
         if self.is_2d: return None
         if not self.auto_y_bot and not self.auto_y_top: return 
 
-        ### Canvas units ###
-        data_height = 1.0 - self.y_pad_bot - self.y_pad_top
-
         ### Data units ###
-        y_min, y_max = self.y_range
-        if y_min >= 0 and not self.pad.GetLogy(): 
-            at_least_zero = True # If everything is positive, make sure that the y_min is at least 0
+        data_min, data_max = self.y_range
+        if data_min >= 0 and not self.pad.GetLogy(): 
+            if y_min is None or y_min < 0: y_min = 0
 
         ### Adjust for log ###
         if self.logy:
-            y_min = np.log10(y_min)
-            y_max = np.log10(y_max)
+            data_min = np.log10(data_min)
+            data_max = np.log10(data_max)
+            if y_min is not None: y_min = np.log10(y_min)
+            if y_max is not None: y_max = np.log10(y_max)
 
-        ### Calculate padding ###
-        diff = y_max - y_min
-        if self.auto_y_bot: y_min -= self.y_pad_bot * diff / data_height
-        if at_least_zero and y_min < 0:
-            y_min = 0
-            diff = y_max
-        if self.auto_y_top: y_max += self.y_pad_top * diff / data_height
+        ### First pass padding ###
+        pad_bot = self.y_pad_bot if self.auto_y_bot else 0
+        pad_top = self.y_pad_top if self.auto_y_top else 0
+        out_min, out_max = self._get_padded_range(data_min, data_max, pad_bot, pad_top)        
+
+        ### Apply constraints ###
+        rerun = False
+        if y_min is not None and out_min < y_min:
+            data_min = y_min
+            pad_bot = 0
+            rerun = True
+        if y_max is not None and out_max > y_max:
+            data_max = y_max
+            pad_top = 0
+            rerun = True
+        if rerun:
+            out_min, out_max = self._get_padded_range(data_min, data_max, pad_bot, pad_top)        
         
-        ### Undo log ###
+        ### Undo log, fix ticks ###
         if self.logy:
-            y_min = np.power(10, y_min)
-            y_max = np.power(10, y_max)
+            out_min = np.power(10, out_min)
+            out_max = np.power(10, out_max)
         else:
-            y_min, y_max = self._fix_bad_yticks(y_min, y_max, at_least_zero, **kwargs)
+            out_min, out_max = self._fix_bad_yticks(out_min, out_max, pad_bot, pad_top, **kwargs)
 
-        self.y_range = (y_min, y_max)
+        ### Output ###
+        self.y_range = (out_min, out_max)
         if self.frame:
             self.frame.GetYaxis().SetRangeUser(*self.y_range)
 
@@ -480,19 +500,21 @@ class Plotter:
             return y_range
 
         ### Get data min/max ###
-        y_min, y_pos, y_max = get_minmax_y(self.objs, x_range=self.x_range, ignore_outliers_y=ignore_outliers_y)
-        if y_min is None or y_max is None or (y_pos is None and self.pad.GetLogy()): 
+        out_min, out_pos, out_max = get_minmax_y(self.objs, x_range=self.x_range, ignore_outliers_y=ignore_outliers_y)
+        if out_min is None or out_max is None or (out_pos is None and self.pad.GetLogy()): 
             self.auto_y_bot = False
             self.auto_y_top = False
             return None
-        self.data_y_min = y_min
-        self.data_y_max = y_max
-        self.data_y_pos = y_pos
+        self.data_y_min = out_min
+        self.data_y_max = out_max
+        self.data_y_pos = out_pos
         
-        if self.pad.GetLogy(): y_min = y_pos
-        if not self.auto_y_bot: y_min = y_range[0]
-        if not self.auto_y_top: y_max = y_range[1]
-        return y_min, y_max
+        ### Set output ###
+        # No padding here! See _pad_y_range
+        if self.pad.GetLogy(): out_min = out_pos
+        if not self.auto_y_bot: out_min = y_range[0]
+        if not self.auto_y_top: out_max = y_range[1]
+        return out_min, out_max
         
     def _auto_z_range(self, z_range=None, **kwargs):
         if z_range is None: return None
@@ -1530,9 +1552,8 @@ def plot_ratio(hists1, hists2, height1=0.7, outlier_arrows=True, hline=None, cal
     c = ROOT.TCanvas("c1", "c1", 1000, 800)
     c.SetFillColor(colors.transparent_white)
 
-    ### Create pads
+    ### Create pads ###
     height2 = 1 - height1
-    height_ratio = height2 / height1
 
     pad1 = ROOT.TPad("pad1", "pad1", 0, height2, 1, 1)
     pad1.SetFillColor(colors.transparent_white)
@@ -1549,13 +1570,11 @@ def plot_ratio(hists1, hists2, height1=0.7, outlier_arrows=True, hline=None, cal
     kwargs.setdefault('text_offset_bottom', 0.07) 
     kwargs.setdefault('remove_x_labels', True) 
     plotter1 = _plot(pad1, hists1, **kwargs)
-    pad1.RedrawAxis() # Make the tick marks go above any fill
 
     ### Draw ratio plot ###
     args2 = { 'ydivs': 504, 'ignore_outliers_y': 4, 'title': None, 'legend': None }
     args2.update(_copy_ratio_args(plotter1, kwargs, '2'))
     plotter2 = _plot(pad2, hists2, **args2)
-    pad2.RedrawAxis() # Make the tick marks go above any fill
 
     ### Draw y=1 line ###
     if hline is not None:
