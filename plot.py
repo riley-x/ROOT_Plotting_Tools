@@ -2441,6 +2441,35 @@ def reduced_legend_hists(shape, opts=None):
 ###                               UTILITIES                                ###
 ##############################################################################
 
+def integral_user(h, user_range, use_width=False, return_error=False):
+    '''
+    Calculates the integral of [h] using a user-coordinate range instead of a bin range.
+
+    @param range
+        data values [min, max], exclusive upper end (MUST ALIGN WITH BINS).
+        Can also be a string "min,max".
+    @param use_width
+        If true, multiply each bin content by the bin width.
+    '''
+    ### Parse string version ###
+    if isinstance(user_range, str):
+        user_range = [float(x) for x in user_range.split(',')]
+        
+    ### Get bin indices ###
+    y0 =  0 if user_range[0] is None else h.GetXaxis().FindFixBin(user_range[0])
+    y1 = -1 if user_range[1] is None else h.GetXaxis().FindFixBin(user_range[1]) - 1
+    if y1 >= 0 and  y1 < y0:
+        raise RuntimeError(f'integral_user() invalid range: {user_range}')
+
+    ### Integral ###
+    option = 'width' if use_width else ''
+    if return_error:
+        import ctypes
+        err = ctypes.c_double(1.)
+        out = h.IntegralAndError(y0, y1, err, option)
+        return out, err.value
+    return h.Integral(y0, y1, option)
+
 
 def undo_width_scaling(h):
     '''
@@ -2452,6 +2481,7 @@ def undo_width_scaling(h):
         h.SetBinContent(i, h.GetBinContent(i) * w)
         h.SetBinError(i, h.GetBinError(i) * w)
     return h
+
 
 def normalize(h, mode="integral"):
     '''
