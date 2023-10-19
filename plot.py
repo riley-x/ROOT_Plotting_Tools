@@ -130,6 +130,12 @@ text_offset_<left/right/bottom/top>                     default: 0.05
     used for relevant [text_pos] options. 
 
 
+PAD/CANVAS
+-----------------------------------------------------
+<left/right/bottom/top>_margin
+    Sets the pad margins.
+
+
 AXES
 -----------------------------------------------------
 log<x/y/z>
@@ -160,8 +166,10 @@ ignore_outliers_y                                       default: 0
     If using an automatic y-axis range, will ignore points when calculating the min/max
     bounds if they're more than this many standard deviations away from the mean. Set to
     0 to disable
+title_offset_<x/y/z>
+    ROOT TGaxis title offset.
 
-
+    
 LEGEND
 -----------------------------------------------------
 legend                                                  default: 'auto'
@@ -357,16 +365,20 @@ class Plotter:
         if self.x_range and self.y_range and not self.is_2d:
             self.frame = ROOT.TH1F('h_frame', '', 1, *self.x_range)
             self.frame.SetDirectory(0)
+        elif self.is_2d and 'Z' in self.draw_opts[0]:
+            # Z axis settings MUST be applied on the histogram drawn with 'Z' option
+            self.frame = self.objs[0]
         else: # use objs[0] as the frame to preserve default ROOT behavior 
             self.frame = self.objs[0].Clone()
 
-    def _set_pad_properties(self, logx=None, logy=None, logz=None, left_margin=None, right_margin=None, bottom_margin=None, **kwargs):
+    def _set_pad_properties(self, logx=None, logy=None, logz=None, left_margin=None, right_margin=None, bottom_margin=None, top_margin=None, **kwargs):
         self.logy = logy
         self.pad.cd()
         if logx is not None: self.pad.SetLogx(logx)
         if logy is not None: self.pad.SetLogy(logy)
         if logz is not None: self.pad.SetLogz(logz)
         if bottom_margin is not None: self.pad.SetBottomMargin(bottom_margin)
+        if top_margin is not None: self.pad.SetTopMargin(top_margin)
         if left_margin is not None: self.pad.SetLeftMargin(left_margin)
         if right_margin is None:
             self.auto_right_margin = True
@@ -563,6 +575,9 @@ class Plotter:
         for i,obj in enumerate(objs):
             _apply_common_opts(obj, i, **kwargs)
             draw_opts.append(_arg(opts, i))
+
+            if (len(draw_opts) > 1 or self.draw_opts) and 'TH2' in objs[0].ClassName() and 'Z' in draw_opts[-1]:
+                warning('plotter::add() 2D histograms plotted with "Z" option must be passed first in order for z-axis settings to work!')
 
         ### Legend ###
         if stack and 'legend_opts' not in kwargs:
@@ -1328,6 +1343,7 @@ def _apply_frame_opts(obj, **kwargs):
 
 
 
+
 ### MISC ###
 
 def _fix_axis_sizing(h, pad, 
@@ -1335,6 +1351,7 @@ def _fix_axis_sizing(h, pad,
     text_size=0.05,
     title_offset_x=1.4,
     title_offset_y=1.4,
+    title_offset_z=None,
     tick_length_x=0.015,
     tick_length_y=0.03,
     label_offset_x=0.005, 
@@ -1355,11 +1372,15 @@ def _fix_axis_sizing(h, pad,
         h.GetXaxis().SetLabelOffset(label_offset_x)
         h.GetXaxis().SetLabelSize(label_size_x / height)
         h.GetXaxis().SetTitleSize(text_size / height)
-        h.GetXaxis().SetTitleOffset(1)
+        h.GetXaxis().SetTitleOffset(title_offset_x)
 
     h.GetYaxis().SetLabelSize(text_size / height)
     h.GetYaxis().SetTitleSize(text_size / height)
     h.GetYaxis().SetTitleOffset(title_offset_y * height)
+
+    h.GetZaxis().SetLabelSize(text_size / height)
+    h.GetZaxis().SetTitleSize(text_size / height)
+    if title_offset_z is not None: h.GetZaxis().SetTitleOffset(title_offset_z)
 
     height -= height * (pad.GetBottomMargin() + pad.GetTopMargin())
     h.GetXaxis().SetTickLength(tick_length_x / height) 
