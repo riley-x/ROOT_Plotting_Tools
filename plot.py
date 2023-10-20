@@ -2052,7 +2052,7 @@ def plot_discrete_bins(hists1, hists2=None, hists3=None, plotter=plot, bin_width
             user_callback(*args)
     kwargs['callback'] = callback
     kwargs.setdefault('label_size_x', 0.03) # don't set this in ChangeLabel(), or else the labels get duplicated
-    kwargs.setdefault('label_offset_x', 0.02) 
+    kwargs.setdefault('label_offset_x', 0.025) 
 
     ### Convert objects to TGraphAsymmErrors ###
     def create_graph(obj, i, n):
