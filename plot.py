@@ -1079,13 +1079,13 @@ class Plotter:
             if 'TGraph' in obj.ClassName() and '2+' in opt: # Specify 2+ to draw both error rectangles and bars
                 obj.Draw(opt.replace('2+', ''))
     
-    def _draw_all(self):
-        if 'TGraph' in self.frame.ClassName():
-            self.frame.Draw('A')
-        else:
-            self.frame.Draw('AXIS')
+    def _draw_all(self, _draw_frame=True, **kwargs):
+        if _draw_frame:
+            if 'TGraph' in self.frame.ClassName():
+                self.frame.Draw('A')
+            else:
+                self.frame.Draw('AXIS')
         self._draw_objs()
-
         for tex in self.titles: tex.Draw()
         if self.legend: self.legend.Draw()
 
@@ -1094,7 +1094,7 @@ class Plotter:
         if not self.compiled:
             self.args.update(kwargs)
             self._compile(**self.args)
-        self._draw_all()
+        self._draw_all(**self.args)
         self.pad.RedrawAxis()
 
     def draw_marker(self, x, y, axes_units=False):
