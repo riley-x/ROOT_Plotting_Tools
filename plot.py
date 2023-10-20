@@ -296,8 +296,9 @@ class Plotter:
     ):
         ### Initialize ###
         self.frame = _frame
-        self.objs = []          # ROOT TObjects to draw
-        self.draw_opts = []     # ROOT plotting options, parallel to self.objs
+        self.objs = []          # ROOT histograms and graphs. Main objects which dictate algorithms like auto text placement.
+        self.draw_objs = []     # ROOT TObjects to draw. This is a superset of self.objs
+        self.draw_opts = []     # ROOT plotting options, parallel to self.draw_objs
         self.legend_items = []  # list of (obj, label, opt) for legend
         self.cache = []
         
@@ -342,7 +343,7 @@ class Plotter:
         # Shorcut: if objs is supplied to the constructor, draw immediately.
         if objs: 
             self.add(objs, **kwargs)
-            self._compile(**kwargs)
+            self.compile(**kwargs)
             if _do_draw:
                 self.draw()
 
@@ -561,6 +562,7 @@ class Plotter:
 
         @modifies
             self.objs
+            self.draw_objs
             self.draw_opts
             self.legend_items
         '''
@@ -593,33 +595,49 @@ class Plotter:
 
         ### Output ###
         self.objs.extend(objs)
+        self.draw_objs.extend(objs)
         self.draw_opts.extend(draw_opts)
         self.legend_items.extend(legend_items)
 
-    def _compile(self, **kwargs):
+    def add_primitives(self, objs, opts='', **kwargs):
+        '''
+        Similar to [add] but for ROOT primitives like TMarker or TBox. This function does
+        not create legend entries, and the added objects do not participate in auto 
+        ranging and text placement.
+
+        @modifies
+            self.draw_objs
+            self.draw_opts
+        '''
+        for i,obj in enumerate(objs):
+            self.draw_objs.append(obj)
+            self.draw_opts.append(_arg(opts, i))
+
+    def compile(self, **kwargs):
         '''
         This function should be called after all [add] calls. This will calculate ranges,
         make the legend, and place the text.
         '''
         self.compiled = True
+        self.args.update(kwargs)
 
         ### Range parsing ###
-        self.x_range = self._auto_x_range(**kwargs)
-        self.y_range = self._auto_y_range(**kwargs)
-        self.z_range = self._auto_z_range(**kwargs)
+        self.x_range = self._auto_x_range(**self.args)
+        self.y_range = self._auto_y_range(**self.args)
+        self.z_range = self._auto_z_range(**self.args)
 
         ### Frame ###
         if self.frame is None:
-            self._create_frame(**kwargs) # This needs x_range
+            self._create_frame(**self.args) # This needs x_range
         self._set_frame_ranges()
-        _apply_frame_opts(self.frame, **kwargs)
-        _fix_axis_sizing(self.frame, self.pad, **kwargs)
+        _apply_frame_opts(self.frame, **self.args)
+        _fix_axis_sizing(self.frame, self.pad, **self.args)
 
         ### Legend and Text ###
-        self._make_legend(**kwargs)
-        self._auto_text_pos_and_pad(**kwargs)
+        self._make_legend(**self.args)
+        self._auto_text_pos_and_pad(**self.args)
         self._parse_text_pos(self.text_pos)
-        self._pad_y_range(**kwargs)
+        self._pad_y_range(**self.args)
 
 
     #####################################################################################
@@ -1058,7 +1076,7 @@ class Plotter:
     #####################################################################################
 
     def _draw_objs(self):
-        for i,(obj,opt) in enumerate(zip(self.objs, self.draw_opts)):
+        for i,(obj,opt) in enumerate(zip(self.draw_objs, self.draw_opts)):
             if opt is None: continue
             opt = 'SAME ' + opt 
 
@@ -1092,8 +1110,7 @@ class Plotter:
     def draw(self, **kwargs):
         self.pad.cd() # Make sure this is before _compile! So that textsizes are accurate.
         if not self.compiled:
-            self.args.update(kwargs)
-            self._compile(**self.args)
+            self.compile(**kwargs)
         self._draw_all(**self.args)
         self.pad.RedrawAxis()
 
