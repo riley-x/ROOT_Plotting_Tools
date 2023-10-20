@@ -1571,7 +1571,8 @@ def _copy_ratio_args(plotter, args, postfix):
     out = {}
     for k,v in args.items():
         if k[-1] == postfix: out[k[:-1]] = v
-        elif k[0] == 'x': out[k] = v
+        elif k.startswith('x'): out[k] = v
+        elif k.endswith('_x'): out[k] = v
         elif k == 'rightmargin': out[k] = v
     out['x_range'] = plotter.x_range
     return out
@@ -2042,17 +2043,16 @@ def plot_discrete_bins(hists1, hists2=None, hists3=None, plotter=plot, bin_width
         if nbins < 1: raise RuntimeError(f'plot_equiwidth_bins() nbins < 1: nbins={nbins}, xrange={xrange}')
 
     ### Adjust labels of x axis ###
-    arg_name = 'frame_callback' + ('3' if hists3 else '2' if hists2 else '')
-    user_frame_callback = kwargs.get(arg_name)
-    def frame_callback(frame):
+    user_callback = kwargs.get('callback')
+    def callback(*args):
         for i in range(bin_start + 1, bin_end + 2): # ticks are 1-indexed
             label = edge_labels[i - 1] if edge_labels else f'{h_check.GetBinLowEdge(i):.0f}'
-            frame.GetXaxis().ChangeLabel(i, 30, -1, -1, -1, -1, label)
-        if user_frame_callback:
-            user_frame_callback(frame)
-    kwargs[arg_name] = frame_callback
-    kwargs.setdefault('xlabelsize', 0.03) # don't set this in ChangeLabel(), or else the labels get duplicated
-    kwargs.setdefault('xlabeloffset', 0.02) 
+            args[-1].frame.GetXaxis().ChangeLabel(i, 30, -1, -1, -1, -1, label)
+        if user_callback:
+            user_callback(*args)
+    kwargs['callback'] = callback
+    kwargs.setdefault('label_size_x', 0.03) # don't set this in ChangeLabel(), or else the labels get duplicated
+    kwargs.setdefault('label_offset_x', 0.02) 
 
     ### Convert objects to TGraphAsymmErrors ###
     def create_graph(obj, i, n):
