@@ -109,9 +109,9 @@ text_pos                                                default: 'auto'
     diagonally opposite corners. You can add 'reverse' to some of these to reverse the 
     title and legend positions.
 
-    Set to 'auto' to automatically adjust position and y axis range (if [y_range] is set 
-    to enable auto adjusting) to fit the text, or a list of the options above to force
-    specific options.
+    Set to 'auto' to automatically choose the best option (the one that requires the 
+    least amount of whitespace), or a list of the options above to only do the optimization
+    over specific options.
 
 title                                                   default: 'ATLAS Internal'
     Title text to display in the plot. Any instance of "ATLAS" will be replaced by the 
@@ -153,12 +153,13 @@ log<x/y/z>
     either entry to None to automatically fit plot contents. Set the entire argument to
     None to use default ROOT behavior. 
 y_pad_bot/top                                           default: 0.05
-    If using an automatic y-axis range, amount of padding at the bottom/top so that the
-    data points don't crowd the edges. Also useful to make room for titles and legends.
+    If using an automatic y-axis range, minimum amount of padding at the bottom/top so that 
+    the data points don't crowd the edges. Also useful to make room for titles and legends.
     The value is in axis coordinates, so a value of 0.05 on both bottom and top makes the
-    data only appear in the center 90% of the axes. 
+    data only appear (at most) in the center 90% of the axes. 
 
-    If [text_pos] is set to 'auto', these options are treated as minimum padding instead.
+    The automatic text placement procedure may increase the actual amount of padding used
+    to fit the title text without overlapping the data.
 y_min/max                                               default: None
     If using an automatic y-axis range, clamp the range to within the specified values.
     Set to `None` to disable.  
@@ -919,11 +920,23 @@ class Plotter:
         needed.
         '''
         ### No auto ###
-        if self.text_pos == 'auto': 
-            if self.is_2d:
-                self.text_pos = 'topleft'
+        if self.is_2d: return
         if not self.has_text(): return
         if self.data_y_max == self.data_y_min: return
+
+        ### Test textpos list ###
+        if self.text_pos == 'auto':
+            test_pos = ['top', 'top reverse', 'topleft', 'topright'] # list of textpos options to test (in order of priority)
+        elif isinstance(self.text_pos, str):
+            test_pos = [self.text_pos]
+        else:
+            test_pos = self.text_pos
+        for x in test_pos:
+            if 'top' not in x:
+                return warning(f'_auto_text_pos_and_pad() only implemented for top-aligned options only, not {x}')
+            
+        ### No auto ###
+        if len(test_pos) == 1 and not self.auto_y_top: return
         
         ### Parse data ###
         data_locs = {} # dictionary mapping x values to maximum y values, in user coordiantes
@@ -938,17 +951,6 @@ class Plotter:
         for x,y in data_locs.items():
             data_locs_axes.append(self.user_to_axes(x, y))
 
-        ### Test textpos list ###
-        if self.text_pos == 'auto':
-            test_pos = ['top', 'top reverse', 'topleft', 'topright'] # list of textpos options to test (in order of priority)
-        elif isinstance(self.text_pos, str):
-            test_pos = [self.text_pos]
-        else:
-            test_pos = self.text_pos
-        for x in test_pos:
-            if 'top' not in x:
-                raise NotImplementedError('_auto_text_pos_and_pad() must supply top-aligned options only')
-            
         ### Test ###
         min_pad = None
         min_pad_pos = 'top'
