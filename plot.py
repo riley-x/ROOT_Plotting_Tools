@@ -1366,7 +1366,7 @@ def _apply_frame_opts(obj, **kwargs):
 def _fix_axis_sizing(h, pad, 
     remove_x_labels=False, 
     text_size=0.05,
-    title_offset_x=1.4,
+    title_offset_x=None,
     title_offset_y=1.4,
     title_offset_z=None,
     tick_length_x=0.015,
@@ -1389,7 +1389,7 @@ def _fix_axis_sizing(h, pad,
         h.GetXaxis().SetLabelOffset(label_offset_x)
         h.GetXaxis().SetLabelSize(label_size_x / height)
         h.GetXaxis().SetTitleSize(text_size / height)
-        h.GetXaxis().SetTitleOffset(title_offset_x)
+        if title_offset_x is not None: h.GetXaxis().SetTitleOffset(title_offset_x)
 
     h.GetYaxis().SetLabelSize(text_size / height)
     h.GetYaxis().SetTitleSize(text_size / height)
@@ -1582,7 +1582,8 @@ def plot_ratio(hists1, hists2, height1=0.7, outlier_arrows=True, hline=None, cal
 
     @param hline
         Draws a horizontal line in the secondary pad. The value sets the y position in
-        user coordinates. Set to None to omit.
+        user coordinates. Set to None to omit. Can also be a dictionary of arguments
+        to [plotter.draw_hline].
     @param outlier_arrows
         Draws small triangles at the top/bottom of the ratio pad to indicate points that
         are outside of the plot range.
@@ -1610,13 +1611,16 @@ def plot_ratio(hists1, hists2, height1=0.7, outlier_arrows=True, hline=None, cal
     plotter1 = _plot(pad1, hists1, **kwargs)
 
     ### Draw ratio plot ###
-    args2 = { 'ydivs': 504, 'ignore_outliers_y': 4, 'title': None, 'legend': None }
+    args2 = { 'ydivs': 504, 'ignore_outliers_y': 4, 'title_offset_x':1.0, 'title': None, 'legend': None }
     args2.update(_copy_ratio_args(plotter1, kwargs, '2'))
     plotter2 = _plot(pad2, hists2, **args2)
 
     ### Draw y=1 line ###
     if hline is not None:
-        plotter2.draw_hline(hline)
+        if isinstance(hline, dict):
+            plotter2.draw_hline(**hline)
+        else:
+            plotter2.draw_hline(hline)
         
     ### Draw out-of-bounds arrows ###
     if outlier_arrows: plotter2.cache.append(_outliers(plotter2.frame, hists2))
