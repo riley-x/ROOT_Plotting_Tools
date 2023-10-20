@@ -100,15 +100,19 @@ filename
     file will be saved in that format. If no extension is given, saves the file with
     each extension in [plot.file_formats].
 text_pos                                                default: 'auto'
-    Location of title / legend. Set to 'auto' to automatically adjust position and y axis
-    range (if [y_range] is set to enable auto adjusting) to fit the text. 
+    Location of title / legend. 
     
-    Alternatively, can be a combination of (top/bottom) and/or (left/right),
+    Can be a combination of (top/bottom) and/or (left/right),
     so for example 'top' will place the title in the top-left corner and the legend in
     the top-right, while 'top left' will place both in the top-left corner. You can also 
     specify 'forward diagonal' or 'backward diagonal' to place the title and legend in
     diagonally opposite corners. You can add 'reverse' to some of these to reverse the 
     title and legend positions.
+
+    Set to 'auto' to automatically adjust position and y axis range (if [y_range] is set 
+    to enable auto adjusting) to fit the text, or a list of the options above to force
+    specific options.
+
 title                                                   default: 'ATLAS Internal'
     Title text to display in the plot. Any instance of "ATLAS" will be replaced by the 
     approriate bold, italic string.
@@ -918,7 +922,6 @@ class Plotter:
         if self.text_pos == 'auto': 
             if self.is_2d:
                 self.text_pos = 'topleft'
-        if self.text_pos != 'auto': return
         if not self.has_text(): return
         if self.data_y_max == self.data_y_min: return
         
@@ -935,11 +938,20 @@ class Plotter:
         for x,y in data_locs.items():
             data_locs_axes.append(self.user_to_axes(x, y))
 
-        ### Test different textpos ###
-        test_pos = ['top', 'top reverse', 'topleft', 'topright'] # list of textpos options to test (in order of priority)
+        ### Test textpos list ###
+        if self.text_pos == 'auto':
+            test_pos = ['top', 'top reverse', 'topleft', 'topright'] # list of textpos options to test (in order of priority)
+        elif isinstance(self.text_pos, str):
+            test_pos = [self.text_pos]
+        else:
+            test_pos = self.text_pos
+        for x in test_pos:
+            if 'top' not in x:
+                raise NotImplementedError('_auto_text_pos_and_pad() must supply top-aligned options only')
+            
+        ### Test ###
         min_pad = None
         min_pad_pos = 'top'
-
         for text_pos in test_pos:
             self._parse_text_pos(text_pos)
             req_pad = self._get_required_top_padding(data_locs_axes)
