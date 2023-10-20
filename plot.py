@@ -2385,7 +2385,7 @@ def save_canvas_transparent(c, filename):
     ### Save ###
     image = Image.frombuffer('RGBA', (w, h), arr, 'raw', 'RGBA', 0, 1)
     image.save(filename + '.png')
-    print('Wrote ' + filename + '.png')
+    success('Wrote ' + filename + '.png')
 
 
 ##############################################################################
