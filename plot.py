@@ -228,8 +228,14 @@ normalize
     convert it into a cumulative distribution.
 rebin2d
     Rebins a 2D histogram with variable bins on each axis.
+integral_user
+    Calculates the integral of a histogram using a user-coordinate range instead of a 
+    bin range.
 undo_width_scaling
     Undoes the scaling from h.Scale(1, 'width')
+iter_root
+    Turns TH1 and TGraphs into iterators. Useful for defining generic functions that can
+    operate on either.
 
 
 OTHER
@@ -243,7 +249,6 @@ format
     Automatically formats a list of TObjects. 
 
 '''
-
 import ROOT
 import itertools
 import math
@@ -941,8 +946,7 @@ class Plotter:
         ### Parse data ###
         data_locs = {} # dictionary mapping x values to maximum y values, in user coordiantes
         for obj in self.objs:
-            vals = root_to_list(obj)
-            for x,y,e in vals:
+            for x,y,e_hi,e_lo in iter_root(obj):
                 val = data_locs.get(x)
                 if val is None or y > val:
                     data_locs[x] = y
@@ -1433,21 +1437,19 @@ def _outliers(frame, hists):
 
     markers = []
     for h in hists:
-        if 'TH1' in h.ClassName():
-            for i in range(h.GetNbinsX()):
-                v = h.GetBinContent(i+1)
-                x = h.GetXaxis().GetBinCenter(i+1)
-                if x < x_min or x > x_max: continue
-                if v == 0 and h.GetBinError(i+1) == 0: continue
-                elif y_max is not None and v > y_max:
-                    m = ROOT.TMarker(x, y_max - y_pad, ROOT.kFullTriangleUp)
-                elif y_min is not None and v < y_min:
-                    m = ROOT.TMarker(x, y_min + y_pad, ROOT.kFullTriangleDown)
-                else: continue
-                
-                m.SetMarkerColor(h.GetLineColor())
-                m.Draw()
-                markers.append(m)
+        if not('TH1' in h.ClassName() or 'TGraph' in h.ClassName() or 'TProfile' in h.ClassName()): continue
+        for x,v,e_hi,e_lo in iter_root(h):
+            if x < x_min or x > x_max: continue
+            if v == 0 and e_hi == 0 and e_lo == 0: continue
+            elif y_max is not None and v > y_max:
+                m = ROOT.TMarker(x, y_max + y_pad, ROOT.kOpenTriangleUp)
+            elif y_min is not None and v < y_min:
+                m = ROOT.TMarker(x, y_min - y_pad, ROOT.kOpenTriangleDown)
+            else: continue
+            
+            m.SetMarkerColor(h.GetLineColor())
+            m.Draw()
+            markers.append(m)
 
     return markers
 
@@ -1638,7 +1640,7 @@ def plot_ratio(hists1, hists2, height1=0.7, outlier_arrows=True, hline=None, cal
             plotter2.draw_hline(hline)
         
     ### Draw out-of-bounds arrows ###
-    if outlier_arrows: plotter2.cache.append(_outliers(plotter2.frame, hists2))
+    if outlier_arrows: plotter2.draw_outliers()
 
     ### Callback ###
     if callback:
@@ -2497,7 +2499,7 @@ def reduced_legend_hists(shape, opts=None):
 ###                               UTILITIES                                ###
 ##############################################################################
 
-def integral_user(h, user_range, use_width=False, return_error=False):
+def integral_user(h, user_range=None, use_width=False, return_error=False):
     '''
     Calculates the integral of [h] using a user-coordinate range instead of a bin range.
 
@@ -2512,10 +2514,14 @@ def integral_user(h, user_range, use_width=False, return_error=False):
         user_range = [float(x) for x in user_range.split(',')]
         
     ### Get bin indices ###
-    y0 =  0 if user_range[0] is None else h.GetXaxis().FindFixBin(user_range[0])
-    y1 = -1 if user_range[1] is None else h.GetXaxis().FindFixBin(user_range[1]) - 1
-    if y1 >= 0 and  y1 < y0:
-        raise RuntimeError(f'integral_user() invalid range: {user_range}')
+    if user_range is None:
+        y0 = 0
+        y1 = -1
+    else:
+        y0 =  0 if user_range[0] is None else h.GetXaxis().FindFixBin(user_range[0])
+        y1 = -1 if user_range[1] is None else h.GetXaxis().FindFixBin(user_range[1]) - 1
+        if y1 >= 0 and  y1 < y0:
+            raise RuntimeError(f'integral_user() invalid range: {user_range}')
 
     ### Integral ###
     option = 'width' if use_width else ''
@@ -2747,22 +2753,19 @@ def graph_divide(a, b, errors_a=True, errors_b=True):
     return out
 
 
-def root_to_list(obj):
+def iter_root(obj):
     if 'TH1' in obj.ClassName() or 'TProfile' in obj.ClassName():
-        n = obj.GetNbinsX()
-        def get(i):
-            return (obj.GetBinCenter(i+1), obj.GetBinContent(i+1), obj.GetBinError(i+1))
-    elif 'TGraph' in obj.ClassName():
-        n = obj.GetN()
-        def get(i):
-            return (obj.GetPointX(i), obj.GetPointY(i), 1)
+        for i in range(1, obj.GetNbinsX() + 1):
+            yield (obj.GetBinCenter(i+1), obj.GetBinContent(i+1), obj.GetBinError(i+1), obj.GetBinError(i+1))
+    elif 'TGraph' == obj.ClassName():
+        for i in range(obj.GetN()):
+            yield (obj.GetPointX(i), obj.GetPointY(i), 0, 0)
+    elif 'TGraphAsymmErrors' == obj.ClassName():
+        for i in range(obj.GetN()):
+            yield (obj.GetPointX(i), obj.GetPointY(i), obj.GetErrorYhigh(i), obj.GetErrorYlow(i))
     else:
-        raise RuntimeError('root_to_list() unknown class ' + obj.ClassName())
+        raise RuntimeError('iter_root() unknown class ' + obj.ClassName())
     
-    out = []
-    for i in range(n):
-        out.append(get(i))
-    return out
 
 ##############################################################################
 ###                                LOGGING                                 ###
