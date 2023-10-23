@@ -1664,7 +1664,6 @@ def plot_ratio3(hists1, hists2, hists3, height1=0.55, outlier_arrows=True, hline
     '''
     c = ROOT.TCanvas("c1", "c1", 1000, 800)
     c.SetFillColor(colors.transparent_white)
-    cache = []
 
     ### Create pads ###
     height2 = (1 - height1) / 2 - 0.06
@@ -1690,14 +1689,9 @@ def plot_ratio3(hists1, hists2, hists3, height1=0.55, outlier_arrows=True, hline
     pad3.Draw()
 
     ### Draw main histo ###
-    titlesize = kwargs.get('title_size', 0.05)
-    textsize = kwargs.get('text_size', 0.035)
-    kwargs['title_size'] = titlesize / height1
-    kwargs['text_size'] = textsize / height1
     kwargs.setdefault('text_offset_bottom', 0.1 * (1 - height1)) # guess
+    kwargs.setdefault('remove_x_labels', True) 
     plotter1 = _plot(pad1, hists1, **kwargs)
-    cache.append(plotter1)
-    pad1.RedrawAxis() # Make the tick marks go above any fill
 
     ### Draw first ratio plot ###
     args2 = { 
@@ -1705,19 +1699,9 @@ def plot_ratio3(hists1, hists2, hists3, height1=0.55, outlier_arrows=True, hline
         'ignore_outliers_y': 3, 
         'title': None, 
         'legend': None, 
-        'titlesize': titlesize / height2,
-        'textsize': textsize / height2,
     }
     args2.update(_copy_ratio_args(plotter1, kwargs, '2'))
-    plotter2 = _plot(pad2, hists2, do_legend=False, **args2)
-    cache.append(plotter2)
-    pad2.RedrawAxis() # Make the tick marks go above any fill
-
-    ### Draw y=1 line ###
-    cache.append(_draw_horizontal_line(hline2, plotter1.frame))
-
-    ### Draw out-of-bounds arrows ###
-    if outlier_arrows: cache.append(_outliers(plotter2.frame, hists2))
+    plotter2 = _plot(pad2, hists2, **args2)
 
     ### Draw second ratio plot
     args3 = { 
@@ -1725,24 +1709,26 @@ def plot_ratio3(hists1, hists2, hists3, height1=0.55, outlier_arrows=True, hline
         'ignore_outliers_y': 3, 
         'title': None, 
         'legend': None, 
-        'titlesize': titlesize / height3,
-        'textsize': textsize / height3,
     }
     args3.update(_copy_ratio_args(plotter1, kwargs, '3'))
-    plotter3 = _plot(pad3, hists3, do_legend=False, **args3)
-    cache.append(plotter3)
-    pad3.RedrawAxis() # Make the tick marks go above any fill
+    plotter3 = _plot(pad3, hists3, **args3)
 
-    ### Draw y=1 line ###
-    cache.append(_draw_horizontal_line(hline3, plotter1.frame))
+    ### Draw hlines ###
+    if hline2 is not None:
+        if isinstance(hline2, dict):
+            plotter2.draw_hline(**hline2)
+        else:
+            plotter2.draw_hline(hline2)
+    if hline3 is not None:
+        if isinstance(hline3, dict):
+            plotter3.draw_hline(**hline3)
+        else:
+            plotter3.draw_hline(hline3)
 
     ### Draw out-of-bounds arrows ###
-    if outlier_arrows: cache.append(_outliers(plotter3.frame, hists3))
-
-    ### Fix axes sizing ### 
-    _fix_axis_sizing(plotter1.frame, pad1, True, **kwargs)
-    _fix_axis_sizing(plotter2.frame, pad2, True, **args2)
-    _fix_axis_sizing(plotter3.frame, pad3, **args3)
+    if outlier_arrows:
+        plotter2.draw_outliers()
+        plotter3.draw_outliers()
 
     ### Callback ###
     if callback:
@@ -1750,7 +1736,7 @@ def plot_ratio3(hists1, hists2, hists3, height1=0.55, outlier_arrows=True, hline
     if save_plot:
         save_canvas(c, kwargs.get('filename', hists1[0].GetName()))
 
-    return c, cache
+    return c, plotter1, plotter2, plotter3
 
 
 def plot_two_scale(hists1, hists2, canvas=None, **kwargs):
