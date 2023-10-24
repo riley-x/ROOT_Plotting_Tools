@@ -1314,11 +1314,9 @@ def get_minmax_y(objs, **kwargs):
             if min_pos is None or min_pos_obj < min_pos: min_pos = min_pos_obj
 
     if min_val is None:
-        print(f"WARNING! _get_minmax_all() min_val is None")
-    if min_pos is None:
-        print(f"WARNING! _get_minmax_all() min_pos is None")
+        print(f"WARNING! get_minmax_y() min_val is None")
     if max_val is None:
-        print(f"WARNING! _get_minmax_all() max_val is None")
+        print(f"WARNING! get_minmax_y() max_val is None")
     
     return min_val, min_pos, max_val
 
@@ -1651,7 +1649,7 @@ def plot_ratio(hists1, hists2, height1=0.7, outlier_arrows=True, hline=None, cal
     return c, plotter1, plotter2
 
 
-def plot_ratio3(hists1, hists2, hists3, height1=0.55, outlier_arrows=True, hline2=None, hline3=None, callback=None, save_plot=True, **kwargs):
+def plot_ratio3(hists1, hists2, hists3, height1=0.55, canvas_size=(1000, 800), outlier_arrows=True, hline2=None, hline3=None, callback=None, save_plot=True, **kwargs):
     '''
     A ratio plot with two ancillary pads. Plots [hists1] in a main pad on top and 
     [hists2] and [hists3] in the middle and bottom ancillary pads respectively. The 
@@ -1662,7 +1660,7 @@ def plot_ratio3(hists1, hists2, hists3, height1=0.55, outlier_arrows=True, hline
         Draws a horizontal line in the middle/bottom pad. The value sets the y position 
         in user coordinates. Set to None to omit. 
     '''
-    c = ROOT.TCanvas("c1", "c1", 1000, 800)
+    c = ROOT.TCanvas("c1", "c1", *canvas_size)
     c.SetFillColor(colors.transparent_white)
 
     ### Create pads ###
@@ -1689,7 +1687,7 @@ def plot_ratio3(hists1, hists2, hists3, height1=0.55, outlier_arrows=True, hline
     pad3.Draw()
 
     ### Draw main histo ###
-    kwargs.setdefault('text_offset_bottom', 0.1 * (1 - height1)) # guess
+    kwargs.setdefault('text_offset_bottom', 0.07)
     kwargs.setdefault('remove_x_labels', True) 
     plotter1 = _plot(pad1, hists1, **kwargs)
 
