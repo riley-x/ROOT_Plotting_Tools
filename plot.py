@@ -163,6 +163,9 @@ y_pad_bot/top                                           default: 0.05
 y_min/max                                               default: None
     If using an automatic y-axis range, clamp the range to within the specified values.
     Set to `None` to disable.  
+y_text_data_spacing                                     default: 0.02
+    If using an automatic y-axis range, minimum amount of vertical padding between text 
+    elements (titles and legend) and data points. Value is in pad coordinates.
 x_pad_left/right                                        default: 0
     If using an automatic x-axis range, amount of padding at the left/right so that the
     data points don't crowd the edges. The value is in axes coordinates, so a value of 
@@ -233,7 +236,7 @@ integral_user
     bin range.
 undo_width_scaling
     Undoes the scaling from h.Scale(1, 'width')
-iter_root
+IterRoot
     Turns TH1 and TGraphs into iterators. Useful for defining generic functions that can
     operate on either.
 
@@ -968,9 +971,9 @@ class Plotter:
 
         ### Set outputs ###
         self.text_pos = min_pad_pos
-        self.y_pad_top = max(self.y_pad_top, min_pad + 0.02)
+        self.y_pad_top = max(self.y_pad_top, min_pad)
                 
-    def _get_required_top_padding(self, data_locs_axes):
+    def _get_required_top_padding(self, data_locs_axes, y_text_data_spacing=0.02):
         '''
         Helper function for [_auto_text_pos_and_pad].
 
@@ -983,13 +986,13 @@ class Plotter:
             occlusions.append((
                 self.pad_to_axes_x(tex.GetX()),
                 self.pad_to_axes_x(tex.GetX() + tex.GetXsize()),
-                self.pad_to_axes_y(tex.GetY()), # all text is bottom-aligned
+                self.pad_to_axes_y(tex.GetY() - y_text_data_spacing), # all text is bottom-aligned
             ))
         if self.legend is not None:
             occlusions.append((
                 self.pad_to_axes_x(self.legend.GetX1()),
                 self.pad_to_axes_x(self.legend.GetX2()),
-                self.pad_to_axes_y(self.legend.GetY1()), 
+                self.pad_to_axes_y(self.legend.GetY1()  - y_text_data_spacing), 
             ))
 
         ### Iterate over data points ###
@@ -1608,6 +1611,7 @@ def plot_ratio(hists1, hists2, height1=0.7, outlier_arrows=True, hline=None, cal
 
     ### Create pads ###
     height2 = 1 - height1
+    bottom_margin2 = kwargs.pop('bottom_margin2', 0.12)
 
     pad1 = ROOT.TPad("pad1", "pad1", 0, height2, 1, 1)
     pad1.SetFillColor(colors.transparent_white)
@@ -1617,7 +1621,7 @@ def plot_ratio(hists1, hists2, height1=0.7, outlier_arrows=True, hline=None, cal
     c.cd()
     pad2 = ROOT.TPad("pad2", "pad2", 0, 0, 1, height2)
     pad2.SetFillColor(colors.transparent_white)
-    pad2.SetBottomMargin(0.12 / height2)
+    pad2.SetBottomMargin(bottom_margin2 / height2)
     pad2.Draw()
 
     ### Draw main histo, get error histos
@@ -2739,7 +2743,7 @@ def graph_divide(a, b, errors_a=True, errors_b=True):
 
 def iter_root(obj):
     if 'TH1' in obj.ClassName() or 'TProfile' in obj.ClassName():
-        for i in range(1, obj.GetNbinsX() + 1):
+        for i in range(obj.GetNbinsX()):
             yield (obj.GetBinCenter(i+1), obj.GetBinContent(i+1), obj.GetBinError(i+1), obj.GetBinError(i+1))
     elif 'TGraph' == obj.ClassName():
         for i in range(obj.GetN()):
@@ -2750,6 +2754,87 @@ def iter_root(obj):
     else:
         raise RuntimeError('iter_root() unknown class ' + obj.ClassName())
     
+
+class IterRoot:
+    def __init__(self, obj):
+        self.obj = obj
+        self.i = -1
+        if 'TH1' in obj.ClassName() or 'TProfile' in obj.ClassName():
+            self.n = obj.GetNbinsX()
+        elif 'TGraph' in obj.ClassName():
+            self.n = obj.GetN()
+        else:
+            raise RuntimeError('IterRoot() unknown class ' + obj.ClassName())
+        
+    def __iter__(self):
+        return self
+
+    def __next__(self):
+        self.i += 1
+        if self.i >= self.n:
+            raise StopIteration
+        return self
+    
+    def _get_i(self, delta):
+        i = self.i + delta
+        if i < 0 or i >= self.n:
+            raise RuntimeError(f'IterRoot() out of bounds: {i} (size: {self.n})')
+        return i
+    
+    def x(self, delta=0):
+        i = self._get_i(delta)
+        if 'TH1' in self.obj.ClassName() or 'TProfile' in self.obj.ClassName():
+            return self.obj.GetBinCenter(i + 1)
+        elif 'TGraph' in self.obj.ClassName():
+            return self.obj.GetPointX(i)
+        else:
+            raise RuntimeError('IterRoot() unknown class ' + self.obj.ClassName())
+
+    def y(self, delta=0):
+        i = self._get_i(delta)
+        if 'TH1' in self.obj.ClassName() or 'TProfile' in self.obj.ClassName():
+            return self.obj.GetBinContent(i + 1)
+        elif 'TGraph' in self.obj.ClassName():
+            return self.obj.GetPointY(i)
+        else:
+            raise RuntimeError('IterRoot() unknown class ' + self.obj.ClassName())
+        
+    def e(self, delta=0):
+        i = self._get_i(delta)
+        if 'TH1' in self.obj.ClassName() or 'TProfile' in self.obj.ClassName():
+            return self.obj.GetBinError(i + 1)
+        elif 'TGraph' == self.obj.ClassName():
+            return 0
+        elif 'TGraphErrors' == self.obj.ClassName() or 'TGraphAsymmErrors' == self.obj.ClassName():
+            return self.obj.GetErrorY(i)
+        else:
+            raise RuntimeError('IterRoot() unknown class ' + self.obj.ClassName())
+
+
+    def set_y(self, value, delta=0):
+        i = self._get_i(delta)
+        if 'TH1' in self.obj.ClassName() or 'TProfile' in self.obj.ClassName():
+            self.obj.SetBinContent(i + 1, value)
+        elif 'TGraph' in self.obj.ClassName():
+            self.obj.SetPointY(i, value)
+        else:
+            raise RuntimeError('IterRoot() unknown class ' + self.obj.ClassName())
+        
+    def set_e(self, value, delta=0):
+        '''
+        Sets both up and down y-errors
+        '''
+        i = self._get_i(delta)
+        if 'TH1' in self.obj.ClassName() or 'TProfile' in self.obj.ClassName():
+            self.obj.SetBinError(i + 1, value)
+        elif 'TGraph' == self.obj.ClassName():
+            return
+        elif 'TGraphAsymmErrors' == self.obj.ClassName():
+            self.obj.SetPointEYlow(i, value)
+            self.obj.SetPointEYhigh(i, value)
+        else:
+            raise RuntimeError('IterRoot() unknown class ' + self.obj.ClassName())
+
 
 ##############################################################################
 ###                                LOGGING                                 ###
