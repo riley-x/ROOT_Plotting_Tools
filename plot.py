@@ -1385,7 +1385,7 @@ def _apply_frame_opts(obj, **kwargs):
 def _fix_axis_sizing(h, pad, 
     remove_x_labels=False, 
     text_size=0.05,
-    title_offset_x=None,
+    title_offset_x=1.0,
     title_offset_y=1.4,
     title_offset_z=None,
     tick_length_x=0.015,
@@ -1408,7 +1408,7 @@ def _fix_axis_sizing(h, pad,
         h.GetXaxis().SetLabelOffset(label_offset_x)
         h.GetXaxis().SetLabelSize(label_size_x / height)
         h.GetXaxis().SetTitleSize(text_size / height)
-        if title_offset_x is not None: h.GetXaxis().SetTitleOffset(title_offset_x)
+        h.GetXaxis().SetTitleOffset(title_offset_x)
 
     h.GetYaxis().SetLabelSize(text_size / height)
     h.GetYaxis().SetTitleSize(text_size / height)
