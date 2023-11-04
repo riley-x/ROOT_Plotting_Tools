@@ -1443,9 +1443,9 @@ def _outliers(frame, hists):
             if x < x_min or x > x_max: continue
             if v == 0 and e_hi == 0 and e_lo == 0: continue
             elif y_max is not None and v > y_max:
-                m = ROOT.TMarker(x, y_max + y_pad, ROOT.kOpenTriangleUp)
+                m = ROOT.TMarker(x, y_max - y_pad, ROOT.kOpenTriangleUp)
             elif y_min is not None and v < y_min:
-                m = ROOT.TMarker(x, y_min - y_pad, ROOT.kOpenTriangleDown)
+                m = ROOT.TMarker(x, y_min + y_pad, ROOT.kOpenTriangleDown)
             else: continue
             
             m.SetMarkerColor(h.GetLineColor())
