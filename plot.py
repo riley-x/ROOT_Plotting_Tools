@@ -330,7 +330,7 @@ class Plotter:
         ### Initialize ###
         self.frame = _frame
         self.objs = []          # ROOT histograms and graphs. Main objects which dictate algorithms like auto text placement.
-        self.draw_objs = []     # ROOT TObjects to draw. This is a superset of self.objs
+        self.draw_objs = []     # ROOT TObjects to draw. This is a superset of self.objs that may also contain things like TMarker
         self.draw_opts = []     # ROOT plotting options, parallel to self.draw_objs
         self.legend_items = []  # list of (obj, label, opt) for legend
         self.cache = []
@@ -399,11 +399,10 @@ class Plotter:
         if self.x_range and self.y_range and not self.is_2d:
             self.frame = ROOT.TH1F('h_frame', '', 1, *self.x_range)
             self.frame.SetDirectory(0)
-        elif self.is_2d and 'Z' in self.draw_opts[0]:
-            # Z axis settings MUST be applied on the histogram drawn with 'Z' option
+        else: 
+            # use objs[0] as the frame to preserve default ROOT behavior 
+            # Note Z axis settings MUST be applied on the histogram drawn with 'Z' option, don't clone!
             self.frame = self.objs[0]
-        else: # use objs[0] as the frame to preserve default ROOT behavior 
-            self.frame = self.objs[0].Clone()
 
     def _set_pad_properties(self, logx=None, logy=None, logz=None, left_margin=None, right_margin=None, bottom_margin=None, top_margin=None, **kwargs):
         self.logy = logy
@@ -615,8 +614,17 @@ class Plotter:
         if not objs: return
         if not self.objs:
             self.is_2d = 'TH2' in objs[0].ClassName()
+        
+        ### Replace objs ###
+        orig_objs = objs
+        objs = list(objs)
         if stack:
             objs = _make_stack(objs)
+        for i,obj in enumerate(objs):
+            if obj.ClassName().startswith('TF'):
+                objs[i] = obj.GetHistogram().Clone() 
+                # the histogram is maintained by the TF1 and will be updated with parameter 
+                # changes, so it must be cloned.
 
         ### Styles ###
         draw_opts = []
@@ -624,6 +632,8 @@ class Plotter:
             _apply_common_opts(obj, i, **kwargs)
             draw_opts.append(_arg(opts, i))
 
+            if draw_opts[i] == '' and orig_objs[i].ClassName().startswith('TF'):
+                draw_opts[i] = 'C' # this is default draw option for TF1, but since we replace it with the hist, must manually set
             if (len(draw_opts) > 1 or self.draw_opts) and 'TH2' in objs[0].ClassName() and 'Z' in draw_opts[-1]:
                 warning('plotter::add() 2D histograms plotted with "Z" option must be passed first in order for z-axis settings to work!')
 
@@ -1205,8 +1215,9 @@ class Plotter:
         after [draw].
         '''
         if x is None: return
+        y_range = self.y_range or (self.frame.GetMinimum(), self.frame.GetMaximum())
         self.pad.cd()
-        line = ROOT.TLine(x, self.y_range[0], x, self.y_range[1])
+        line = ROOT.TLine(x, y_range[0], x, y_range[1])
         line.SetLineStyle(style)
         line.SetLineColor(color)
         line.SetLineWidth(width)
@@ -1240,6 +1251,8 @@ def _minmax_x(obj):
             if o_min is None or x < o_min: o_min = x
             if o_max is None or x > o_max: o_max = x
         return o_min, o_max
+    elif obj.ClassName().startswith('TF'):
+        return None, None
     else: 
         raise RuntimeError('_minmax_x() unknown class ' + obj.ClassName())
 
