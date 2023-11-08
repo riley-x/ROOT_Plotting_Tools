@@ -277,24 +277,44 @@ class Plotter:
     
     The main workflow is:
     1. __init__()
-        Sets the pad and title text configuration.
+        Sets the pad and title text configuration. Most pad-level configuration options
+        should be supplied here.
     2. add()
         Adds a list of ROOT objects to the draw stack, with formatting and legend. This
-        function can be called repeatedly. 
+        function can be called repeatedly. All style options should be passed here.
     3. draw()
         Processes object-dependent configuration, such as auto ranging and text placement,
-        and draws all objects in the draw stack.
+        and draws all objects in the draw stack. 
 
     An optional shortcut is to supply the [objs] arguement to __init__(), which will call
-    the other steps automatically.  
+    the other steps automatically.
     
     See this file's docstring for configuration options, that can be passed in kwargs to
     the various functions. 
 
+    -------------------------------- Implementation Details --------------------------------
+    Much of the confusion in ROOT plotting is caused by the coupling of axes to individual
+    histograms. This leads to such confusing things as needing to call "SAME" in the draw
+    options, or errors such as
+        h1.Draw()
+        h2.Draw('SAME')
+        h2.GetXaxis().SetTitle('this will not show up!')
+    because the axes being drawn are from h1, not h2. This class remedies this problem by
+    defining a dedicated "frame" histogram, that is always drawn first using the 'AXIS'
+    option. This also solves the annoying problem that TGraphs behave differently from TH1s,
+    especially regarding axis limits.
+
+    The frame histogram is not created until the call to compile(), which first processes 
+    all objects input with add() to calculate things like automatic axis ranges, etc. Note
+    that you normally don't have to call compile() yourself, since it is called in draw().
+    However, sometimes it useful to create the frame histogram before drawing. For example,
+    if you want to retrieve the axis limits before initiating the draw step. You can also 
+    supply your own frame histogram by using the [_frame] option in __init__().
+
     @param _do_draw
-        Skip draw if false
+        Skip draw if false. Only applies when [objs] is not None.
     @param _frame
-        Supply a custom frame object
+        Supply a custom frame object.
     '''
 
     def __init__(self, pad,
