@@ -400,6 +400,19 @@ class Plotter:
             self.auto_right_margin = False
             self.pad.SetRightMargin(right_margin)
 
+    def _auto_right_margin(self):
+        '''
+        This needs to be called after objects have been added, so we can test against
+        the 'COLZ' option.
+        '''
+        if not self.auto_right_margin: return
+        if not self.is_2d: return
+        if not 'Z' in self.draw_opts[0]: return
+        if self.frame.GetZaxis().GetTitle():
+            self.pad.SetRightMargin(0.18)
+        else:
+            self.pad.SetRightMargin(0.12)
+
     def user_to_axes(self, x, y):
         return user_to_axes(self.pad, self.frame, (x, y))
 
@@ -644,6 +657,7 @@ class Plotter:
             self._create_frame(**self.args) # This needs x_range
         self._set_frame_ranges()
         _apply_frame_opts(self.frame, **self.args)
+        self._auto_right_margin()
         _fix_axis_sizing(self.frame, self.pad, **self.args)
 
         ### Legend and Text ###
