@@ -2795,12 +2795,15 @@ def iter_root(obj):
     elif 'TGraph' == obj.ClassName():
         for i in range(obj.GetN()):
             yield (obj.GetPointX(i), obj.GetPointY(i), 0, 0)
+    elif 'TGraphErrors' == obj.ClassName():
+        for i in range(obj.GetN()):
+            yield (obj.GetPointX(i), obj.GetPointY(i), obj.GetErrorY(i), obj.GetErrorY(i))
     elif 'TGraphAsymmErrors' == obj.ClassName():
         for i in range(obj.GetN()):
             yield (obj.GetPointX(i), obj.GetPointY(i), obj.GetErrorYhigh(i), obj.GetErrorYlow(i))
     else:
         raise RuntimeError('iter_root() unknown class ' + obj.ClassName())
-    
+
 
 class IterRoot:
     def __init__(self, obj):
@@ -2876,6 +2879,9 @@ class IterRoot:
             self.obj.SetBinError(i + 1, value)
         elif 'TGraph' == self.obj.ClassName():
             return
+        elif 'TGraphErrors' == self.obj.ClassName():
+            ex = self.obj.GetErrorX(i)
+            self.obj.SetPointError(i, ex, value)
         elif 'TGraphAsymmErrors' == self.obj.ClassName():
             self.obj.SetPointEYlow(i, value)
             self.obj.SetPointEYhigh(i, value)
