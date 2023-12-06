@@ -1639,7 +1639,7 @@ def _draw_horizontal_line(pos, frame):
     return line
 
 
-def plot_ratio(hists1, hists2, height1=0.7, outlier_arrows=True, hline=None, callback=None, save_plot=True, **kwargs):
+def plot_ratio(hists1, hists2, height1=0.7, outlier_arrows=True, hline=None, hline2=None, callback=None, save_plot=True, **kwargs):
     '''
     Plots [hists1] in a main pad on top and [hists2] in a secondary pad below. The two 
     sets of objects should share the same x axis. Set options in the secondary pad by 
@@ -1649,10 +1649,15 @@ def plot_ratio(hists1, hists2, height1=0.7, outlier_arrows=True, hline=None, cal
         Draws a horizontal line in the secondary pad. The value sets the y position in
         user coordinates. Set to None to omit. Can also be a dictionary of arguments
         to [plotter.draw_hline].
+    @param hline2
+        Alias to hline
     @param outlier_arrows
         Draws small triangles at the top/bottom of the ratio pad to indicate points that
         are outside of the plot range.
     '''
+    if hline is None:
+        hline = hline2
+
     c = ROOT.TCanvas("c1", "c1", 1000, 800)
     c.SetFillColor(colors.transparent_white)
 
