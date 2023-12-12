@@ -429,8 +429,7 @@ class Plotter:
         return pad_to_axes_height(self.pad, self.frame, height)
     def pad_to_axes(self, x, y):
         return pad_to_axes(self.pad, self.frame, (x, y))
-
-    
+ 
     def reset_pad(self, pad):
         self.compiled = False
         self.pad = pad
@@ -588,13 +587,22 @@ class Plotter:
     ###                                MAIN PROCESSING                                ###
     #####################################################################################
 
-    def add(self, objs, stack=False, opts='', **kwargs):
+    def add(self, objs, stack=False, opts='', pos=None, legend_pos=None, **kwargs):
         '''
         Adds a list of objects to the plotter.
 
         @param stack
             If True, [objs] must be a list of TH1s that will be added into a stack. No
             other objects should be included.
+        @param pos
+            By default, objects from subsequent calls of [add] are plotted on top of 
+            current objects. Set [pos] to an index in the list [draw_objs] to alter
+            the z-order of the drawing.
+        @param legend_pos
+            Index of where to insert the legend entries for these [objs]. By default
+            will append them to the end.
+        @param kwargs
+            Options for [_apply_common_opts] and [_get_legend_list].
 
         @modifies
             self.objs
@@ -642,9 +650,16 @@ class Plotter:
 
         ### Output ###
         self.objs.extend(objs)
-        self.draw_objs.extend(objs)
-        self.draw_opts.extend(draw_opts)
-        self.legend_items.extend(legend_items)
+        if pos is not None:
+            self.draw_objs[pos:pos] = objs
+            self.draw_opts[pos:pos] = draw_opts
+        else:
+            self.draw_objs.extend(objs)
+            self.draw_opts.extend(draw_opts)
+        if legend_pos is not None:
+            self.legend_items[legend_pos:legend_pos] = legend_items
+        else:
+            self.legend_items.extend(legend_items)
 
     def add_primitives(self, objs, opts='', **kwargs):
         '''
