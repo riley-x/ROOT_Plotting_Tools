@@ -927,7 +927,7 @@ class Plotter:
             legend.SetTextSize(self.text_size)
             legend.SetTextFont(42) # Default ATLAS font
             legend.AddEntry(*entry)
-            legend.height = get_text_size(entry[1], self.text_size)[1] # this merely sets a python attribute
+            legend.height = max(self.text_size, get_text_size(entry[1], self.text_size)[1]) # this merely sets a python attribute
             self.legends.append(legend)
 
             if (i != 0):
