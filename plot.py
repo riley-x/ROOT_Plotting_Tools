@@ -319,10 +319,6 @@ class Plotter:
 
     def __init__(self, pad,
         objs=None,  
-        text_pos='auto', 
-        title_size=0.05, text_size=0.035, text_spacing=1, text_back_color=None,
-        text_offset_left=0.05, text_offset_right=0.05, text_offset_top=0.05, text_offset_bottom=0.05,
-        legend_height=1,
         y_pad=None, y_pad_bot=0.05, y_pad_top=0.05, 
         _do_draw=True, _frame=None,
         **kwargs
@@ -341,33 +337,20 @@ class Plotter:
         ### Pad ###
         self.pad = pad
         self._set_pad_properties(**kwargs)
-        pad_height = pad.GetHNDC()
 
         ### Titles ###
-        # All text sizes/positions are in pad units.
-        self.text_pos = text_pos
-        self.text_back_color = text_back_color
-
-        self.title_size = title_size / pad_height
-        self.text_size = text_size / pad_height
-        self.text_spacing = text_size * text_spacing * 0.15
-
-        self.text_left = self.pad.GetLeftMargin() + text_offset_left
-        self.text_right = 1 - self.pad.GetRightMargin() - text_offset_right
-        self.text_top = 1 - self.pad.GetTopMargin() - text_offset_top
-        self.text_bottom = self.pad.GetBottomMargin() + text_offset_bottom
-
-        self.legend_height_scale = legend_height
-
+        self._set_text_properties(**kwargs)
         self._make_titles(**kwargs)
 
         ### Axis ###
         if y_pad is not None:
-            self.y_pad_bot = y_pad
-            self.y_pad_top = y_pad
+            self.y_min_pad_bot = y_pad
+            self.y_min_pad_top = y_pad
         else:
-            self.y_pad_bot = y_pad_bot
-            self.y_pad_top = y_pad_top
+            self.y_min_pad_bot = y_pad_bot
+            self.y_min_pad_top = y_pad_top
+        self.y_pad_bot = self.y_min_pad_bot
+        self.y_pad_top = self.y_min_pad_top
 
         ### Other ###
         self.args = kwargs
@@ -447,6 +430,14 @@ class Plotter:
     def pad_to_axes(self, x, y):
         return pad_to_axes(self.pad, self.frame, (x, y))
 
+    
+    def reset_pad(self, pad):
+        self.compiled = False
+        self.pad = pad
+        self._set_pad_properties(**self.args)
+        self._set_text_properties(**self.args)
+        self._make_titles(**self.args)
+
     #####################################################################################
     ###                                     RANGES                                    ###
     #####################################################################################
@@ -510,7 +501,7 @@ class Plotter:
         ### First pass padding ###
         pad_bot = self.y_pad_bot if self.auto_y_bot else 0
         pad_top = self.y_pad_top if self.auto_y_top else 0
-        out_min, out_max = self._get_padded_range(data_min, data_max, pad_bot, pad_top)        
+        out_min, out_max = self._get_padded_range(data_min, data_max, pad_bot, pad_top)
 
         ### Apply constraints ###
         rerun = False
@@ -673,6 +664,11 @@ class Plotter:
         '''
         This function should be called after all [add] calls. This will calculate ranges,
         make the legend, and place the text.
+
+        WARNING due to a ROOT bug, calls to GetXsize() break after saving the canvas. So 
+        don't call compile() again after saving the canvas. Can use [reset_pad] though.
+
+        https://root-forum.cern.ch/t/tlatex-getxsize-bug/57515
         '''
         self.compiled = True
         self.args.update(kwargs)
@@ -693,7 +689,7 @@ class Plotter:
         ### Legend and Text ###
         self._make_legend(**self.args)
         self._auto_text_pos_and_pad(**self.args)
-        self._parse_text_pos(self.text_pos)
+        self._place_text_from_textpos(self.text_pos)
         self._pad_y_range(**self.args)
 
 
@@ -887,7 +883,7 @@ class Plotter:
             if width > _max: _max = width
         return _max
 
-    def _make_legend(self, legend_columns=1, **kwargs):
+    def _make_legend(self, legend_columns=1, legend_height_scale=1, **_):
         '''
         Creates a ROOT.TLegend with entries from [self.legend_items]. Also measures the 
         legend sizing.
@@ -915,8 +911,10 @@ class Plotter:
         self.legend_columns = legend_columns
         self.legend_rows = math.ceil(len(self.legend_items) / legend_columns)
         self.legend_width = (leg_symbol_width + leg_symbol_pad + leg_label_width) * legend_columns
-        self.legend_height = self.text_size * self.legend_rows + self.text_spacing * (self.legend_rows - 1)
-        self.legend_height *= self.legend_height_scale
+        self.legend_height = (self.text_size + self.text_spacing) * self.legend_rows 
+        # No -1 here because we don't control the separation, so this prevents "jiggle"
+        # when adding legend entries
+        self.legend_height *= legend_height_scale
 
         ### Legend ###
         self.legend = ROOT.TLegend()
@@ -952,6 +950,32 @@ class Plotter:
     #####################################################################################
     ###                                    TEXTPOS                                    ###
     #####################################################################################
+
+    def _set_text_properties(self,
+        text_pos='auto', 
+        title_size=0.05, text_size=0.035, text_spacing=1,     
+        text_back_color=None,
+        text_offset_left=0.05, text_offset_right=0.05, text_offset_top=0.05, text_offset_bottom=0.05,
+        **_,
+    ):
+        '''
+        All text sizes/positions are in pad units.
+
+        @requires
+            Pad margins should be set already.
+        '''
+        self.text_pos = text_pos
+        self.text_back_color = text_back_color
+
+        pad_height = self.pad.GetHNDC()
+        self.title_size = title_size / pad_height
+        self.text_size = text_size / pad_height
+        self.text_spacing = text_size * text_spacing * 0.15
+
+        self.text_left = self.pad.GetLeftMargin() + text_offset_left
+        self.text_right = 1 - self.pad.GetRightMargin() - text_offset_right
+        self.text_top = 1 - self.pad.GetTopMargin() - text_offset_top
+        self.text_bottom = self.pad.GetBottomMargin() + text_offset_bottom
 
     def has_text(self):
         return bool(self.title_lines or self.legend)
@@ -1006,16 +1030,16 @@ class Plotter:
         min_pad = None
         min_pad_pos = 'top'
         for text_pos in test_pos:
-            self._parse_text_pos(text_pos)
+            self._place_text_from_textpos(text_pos)
             req_pad = self._get_required_top_padding(data_locs_axes)
             if min_pad is None or req_pad < min_pad:
                 min_pad = req_pad
                 min_pad_pos = text_pos
-                if min_pad < self.y_pad_top: break
+                if min_pad < self.y_min_pad_top: break
 
         ### Set outputs ###
         self.text_pos = min_pad_pos
-        self.y_pad_top = max(self.y_pad_top, min_pad)
+        self.y_pad_top = max(self.y_min_pad_top, min_pad)
                 
     def _get_required_top_padding(self, data_locs_axes, y_text_data_spacing=0.02):
         '''
@@ -1051,7 +1075,7 @@ class Plotter:
                     max_pad = max(max_pad, pad_req)
         return max_pad
 
-    def _parse_text_pos(self, textpos):
+    def _place_text_from_textpos(self, textpos):
         '''
         Parses [textpos] to determine the quadrant of the title text and legend.
 
