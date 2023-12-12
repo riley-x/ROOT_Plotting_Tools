@@ -883,25 +883,28 @@ class Plotter:
             if width > _max: _max = width
         return _max
 
-    def _make_legend(self, legend_columns=1, legend_height_scale=1, **_):
+    def _make_legend(self, legend_columns=1, **_):
         '''
         Creates a ROOT.TLegend with entries from [self.legend_items]. Also measures the 
         legend sizing.
 
         @sets
-            self.legend
+            self.legends
             self.legend_width
             self.legend_height
             self.legend_rows
             self.legend_columns
         '''
+        self.legends = []
+        self.legend_height = 0
         if not self.legend_items:
-            self.legend = None
-            self.legend_height = 0
             self.legend_width = 0
             self.legend_rows = 1
             self.legend_columns = 1
             return
+        
+        if (legend_columns != 1):
+            raise NotImplementedError('Legend columns > 1')
 
         ### Legend size ###
         # These are in pad units, i.e. fraction of pad width
@@ -911,22 +914,25 @@ class Plotter:
         self.legend_columns = legend_columns
         self.legend_rows = math.ceil(len(self.legend_items) / legend_columns)
         self.legend_width = (leg_symbol_width + leg_symbol_pad + leg_label_width) * legend_columns
-        self.legend_height = (self.text_size + self.text_spacing) * self.legend_rows 
-        # No -1 here because we don't control the separation, so this prevents "jiggle"
-        # when adding legend entries
-        self.legend_height *= legend_height_scale
-
+        
         ### Legend ###
-        self.legend = ROOT.TLegend()
-        self.legend.SetFillColor(colors.transparent_white)
-        self.legend.SetLineColor(0)
-        self.legend.SetBorderSize(0)
-        self.legend.SetMargin(leg_symbol_width / self.legend_width) # SetMargin expects the fractional width relative to the legend...cause that's intuitive
-        self.legend.SetTextSize(self.text_size)
-        self.legend.SetTextFont(42) # Default ATLAS font
-        self.legend.SetNColumns(legend_columns)
-        for i in self.legend_items:
-            self.legend.AddEntry(*i)
+        # We use a single ROOT.TLegend per entry to have better fine-grained control
+        # on entry placement.
+        for i,entry in enumerate(self.legend_items):
+            legend = ROOT.TLegend()
+            legend.SetFillColor(colors.transparent_white)
+            legend.SetLineColor(0)
+            legend.SetBorderSize(0)
+            legend.SetMargin(leg_symbol_width / self.legend_width) # SetMargin expects the fractional width relative to the legend...cause that's intuitive
+            legend.SetTextSize(self.text_size)
+            legend.SetTextFont(42) # Default ATLAS font
+            legend.AddEntry(*entry)
+            legend.height = get_text_size(entry[1], self.text_size)[1] # this merely sets a python attribute
+            self.legends.append(legend)
+
+            if (i != 0):
+                self.legend_height += self.text_spacing
+            self.legend_height += legend.height
 
     def _place_legend(self, x, y, align):
         '''
@@ -934,17 +940,18 @@ class Plotter:
         @param x left or right edge of the legend, depending on [align]
         @param align either 'left' or 'right'
         '''
-        if not self.legend: return
         if align == 'left':
             al = ROOT.kHAlignLeft
         else:
             al = ROOT.kHAlignRight
             x -= self.legend_width
-        self.legend.SetTextAlign(al + ROOT.kVAlignCenter)
-        self.legend.SetX1(x)
-        self.legend.SetX2(x + self.legend_width)
-        self.legend.SetY1(y - self.legend_height)
-        self.legend.SetY2(y)
+        for legend in self.legends:
+            legend.SetTextAlign(al + ROOT.kVAlignCenter)
+            legend.SetX1(x)
+            legend.SetX2(x + self.legend_width)
+            legend.SetY1(y - legend.height)
+            legend.SetY2(y)
+            y -= legend.height + self.text_spacing
 
 
     #####################################################################################
@@ -978,7 +985,7 @@ class Plotter:
         self.text_bottom = self.pad.GetBottomMargin() + text_offset_bottom
 
     def has_text(self):
-        return bool(self.title_lines or self.legend)
+        return bool(self.title_lines or self.legends)
 
     def _auto_text_pos_and_pad(self, **kwargs):
         '''
@@ -1056,12 +1063,13 @@ class Plotter:
                 self.pad_to_axes_x(tex.GetX() + tex.GetXsize()),
                 self.pad_to_axes_y(tex.GetY() - y_text_data_spacing), # all text is bottom-aligned
             ))
-        if self.legend is not None:
-            occlusions.append((
-                self.pad_to_axes_x(self.legend.GetX1()),
-                self.pad_to_axes_x(self.legend.GetX2()),
-                self.pad_to_axes_y(self.legend.GetY1()  - y_text_data_spacing), 
-            ))
+        if len(self.legends) > 0:
+            for legend in self.legends[-self.legend_columns:]:
+                occlusions.append((
+                    self.pad_to_axes_x(legend.GetX1()),
+                    self.pad_to_axes_x(legend.GetX2()),
+                    self.pad_to_axes_y(legend.GetY1()  - y_text_data_spacing), 
+                ))
 
         ### Iterate over data points ###
         max_pad = 0
@@ -1194,7 +1202,8 @@ class Plotter:
                 self.frame.Draw('AXIS')
         self._draw_objs()
         for tex in self.titles: tex.Draw()
-        if self.legend: self.legend.Draw()
+        for legend in self.legends: 
+            legend.Draw()
 
     def draw(self, **kwargs):
         self.pad.cd() # Make sure this is before _compile! So that textsizes are accurate.
@@ -1609,7 +1618,7 @@ def pad_to_axes(pad, frame, coord):
 
 def get_text_size(text, text_size):
     '''
-    Returns the size of [text] in pad (NDC) units.
+    Returns the (width, height) of [text] in pad (NDC) units.
     '''
     tex = ROOT.TLatex(0, 0, text)
     tex.SetTextFont(42)
