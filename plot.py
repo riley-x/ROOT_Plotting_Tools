@@ -785,16 +785,27 @@ class Plotter:
                 subtitle = [subtitle]
             for i,sub in enumerate(subtitle):
                 if i > 0: y += self.text_spacing
-                y += self.text_size
 
                 tex = ROOT.TLatex(0, 0, sub)
                 tex.SetNDC()
                 tex.SetTextFont(42)
                 tex.SetTextSize(self.text_size)
                 tex.SetTextAlign(ROOT.kVAlignBottom + ROOT.kHAlignLeft)
+                
+                y += tex.GetYsize()
+
+                # ROOT TLatex bottom align seems to align to baseline. But then
+                # subtracting by the full height is too much when there are glyphs
+                # below the baseline. So this is a hardcode fix...not sure how to 
+                # get height from baseline.
+                if '#splitline' in sub: 
+                    y -= 0.01
 
                 self.title_lines.append([y, [[0, tex]]])
                 self.titles.append(tex)
+
+                if '#splitline' in sub:
+                    y += 0.01
 
         self.title_height = y
         self._format_titles()
