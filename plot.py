@@ -792,20 +792,22 @@ class Plotter:
                 tex.SetTextSize(self.text_size)
                 tex.SetTextAlign(ROOT.kVAlignBottom + ROOT.kHAlignLeft)
                 
-                y += tex.GetYsize()
+                height = tex.GetYsize()
+                y += height
 
                 # ROOT TLatex bottom align seems to align to baseline. But then
                 # subtracting by the full height is too much when there are glyphs
                 # below the baseline. So this is a hardcode fix...not sure how to 
                 # get height from baseline.
                 if '#splitline' in sub: 
-                    y -= 0.01
+                    diff = height - self.text_size
+                    y -= diff
 
                 self.title_lines.append([y, [[0, tex]]])
                 self.titles.append(tex)
 
                 if '#splitline' in sub:
-                    y += 0.01
+                    y += diff
 
         self.title_height = y
         self._format_titles()
@@ -1652,6 +1654,49 @@ def get_text_size(text, text_size):
     return tex.GetXsize(), tex.GetYsize()
 
 
+
+
+class RatioPads:
+    def __init__(self, height1=0.7, canvas_size=(1000, 800), bottom_margin=0.12):
+        self.c = ROOT.TCanvas("c1", "c1", *canvas_size)
+        self.c.SetFillColor(colors.transparent_white)
+
+        ### Create pads ###
+        height2 = 1 - height1
+
+        self.pad1 = ROOT.TPad("pad1", "pad1", 0, height2, 1, 1)
+        self.pad1.SetFillColor(colors.transparent_white)
+        self.pad1.SetBottomMargin(0.03)
+        self.pad1.Draw()
+
+        self.c.cd()
+        self.pad2 = ROOT.TPad("pad2", "pad2", 0, 0, 1, height2)
+        self.pad2.SetFillColor(colors.transparent_white)
+        self.pad2.SetBottomMargin(bottom_margin / height2)
+        self.pad2.Draw()
+
+    default_args1 = {
+        'text_offset_bottom': 0.07,
+        'remove_x_labels': True,
+    }
+    default_args2 = { 
+        'ydivs': 504, 
+        'ignore_outliers_y': 4, 
+        'title_offset_x':1.0, 
+        'title': None, 
+        'legend': None,
+    }
+
+    def make_plotter1(self, **kwargs):
+        args = self.default_args1.copy()
+        args.update(kwargs)
+        return Plotter(self.pad1, **args)
+    
+    def make_plotter2(self, **kwargs):
+        args = self.default_args2.copy()
+        args.update(kwargs)
+        return Plotter(self.pad2, **args)
+    
 
 ##############################################################################
 ###                            CANVAS WRAPPERS                             ###
