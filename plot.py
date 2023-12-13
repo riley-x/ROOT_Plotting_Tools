@@ -1684,7 +1684,6 @@ class RatioPads:
         'ignore_outliers_y': 4, 
         'title_offset_x':1.0, 
         'title': None, 
-        'legend': None,
     }
 
     def make_plotter1(self, **kwargs):
