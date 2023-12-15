@@ -1654,10 +1654,33 @@ def get_text_size(text, text_size):
     return tex.GetXsize(), tex.GetYsize()
 
 
+##############################################################################
+###                               RATIO PADS                               ###
+##############################################################################
 
 
 class RatioPads:
-    def __init__(self, height1=0.7, canvas_size=(1000, 800), bottom_margin=0.12):
+    '''
+    This class creates default pads for ratio plots. Prefer using [plot_ratio]
+    for simple cases; this class is only needed if you need direct access to the
+    [Plotter] before drawing the main objects.
+
+    Workflow:
+        pads = RatioPads()
+
+        ### Method 1 ###
+        plotter1 = pads.make_plotter1(...)
+        plotter1.add(...)
+        plotter1.draw(...)
+        # repeat for plotter2
+
+        ### Method 2 ###
+        plotter1 = Plotter(pads.pad1, ..., **RatioPads.default_args1)
+        plotter1.add(...)
+        plotter1.draw(...)
+        # repeat for plotter2
+    '''
+    def __init__(self, height1=0.7, canvas_size=(1000, 800), bottom_margin=0.12, **_):
         self.c = ROOT.TCanvas("c1", "c1", *canvas_size)
         self.c.SetFillColor(colors.transparent_white)
 
@@ -1682,7 +1705,7 @@ class RatioPads:
     default_args2 = { 
         'ydivs': 504, 
         'ignore_outliers_y': 4, 
-        'title_offset_x':1.0, 
+        'title_offset_x': 1.0, 
         'title': None, 
     }
 
@@ -1731,22 +1754,13 @@ def _copy_ratio_args(plotter, args, postfix):
     return out
 
 
-def _draw_horizontal_line(pos, frame):
-    # TODO this will still draw the line out of the axes if pos is not in yrange
-    if pos is None: return
-    x_min = frame.GetXaxis().GetXmin()
-    x_max = frame.GetXaxis().GetXmax()
-    line = ROOT.TLine(x_min, pos, x_max, pos)
-    line.SetLineStyle(ROOT.kDashed)
-    line.Draw()
-    return line
-
-
-def plot_ratio(hists1, hists2, height1=0.7, outlier_arrows=True, hline=None, hline2=None, callback=None, save_plot=True, **kwargs):
+def plot_ratio(hists1, hists2, outlier_arrows=True, hline=None, hline2=None, callback=None, save_plot=True, **kwargs):
     '''
     Plots [hists1] in a main pad on top and [hists2] in a secondary pad below. The two 
     sets of objects should share the same x axis. Set options in the secondary pad by 
     postpending the kwargs with a '2'.
+
+    @returns canvas, plotter1, plotter2
 
     @param hline
         Draws a horizontal line in the secondary pad. The value sets the y position in
@@ -1757,37 +1771,27 @@ def plot_ratio(hists1, hists2, height1=0.7, outlier_arrows=True, hline=None, hli
     @param outlier_arrows
         Draws small triangles at the top/bottom of the ratio pad to indicate points that
         are outside of the plot range.
+    @param callback
+        A function (plotter1, plotter2) -> None called after everything else, useful to 
+        access the plotters if this function is deeply nested. 
+    @param save_plot
+        Will save the file using kwargs['filename']. Set to false if you want to modify
+        the plotters still, like to add extra markers.
     '''
     if hline is None:
         hline = hline2
 
-    c = ROOT.TCanvas("c1", "c1", 1000, 800)
-    c.SetFillColor(colors.transparent_white)
-
     ### Create pads ###
-    height2 = 1 - height1
-    bottom_margin2 = kwargs.pop('bottom_margin2', 0.12)
-
-    pad1 = ROOT.TPad("pad1", "pad1", 0, height2, 1, 1)
-    pad1.SetFillColor(colors.transparent_white)
-    pad1.SetBottomMargin(0.03)
-    pad1.Draw()
-
-    c.cd()
-    pad2 = ROOT.TPad("pad2", "pad2", 0, 0, 1, height2)
-    pad2.SetFillColor(colors.transparent_white)
-    pad2.SetBottomMargin(bottom_margin2 / height2)
-    pad2.Draw()
+    pads = RatioPads(**kwargs)
 
     ### Draw main histo, get error histos
     kwargs.setdefault('text_offset_bottom', 0.07) 
     kwargs.setdefault('remove_x_labels', True) 
-    plotter1 = _plot(pad1, hists1, **kwargs)
+    plotter1 = pads.make_plotter1(objs=hists1, **kwargs)
 
     ### Draw ratio plot ###
-    args2 = { 'ydivs': 504, 'ignore_outliers_y': 4, 'title_offset_x':1.0, 'title': None, 'legend': None }
-    args2.update(_copy_ratio_args(plotter1, kwargs, '2'))
-    plotter2 = _plot(pad2, hists2, **args2)
+    args2 = _copy_ratio_args(plotter1, kwargs, '2')
+    plotter2 = pads.make_plotter2(objs=hists2, **args2)
 
     ### Draw y=1 line ###
     if hline is not None:
@@ -1803,9 +1807,9 @@ def plot_ratio(hists1, hists2, height1=0.7, outlier_arrows=True, hline=None, hli
     if callback:
         callback(plotter1, plotter2)
     if save_plot:
-        save_canvas(c, kwargs.get('filename', hists1[0].GetName()))
+        save_canvas(pads.c, kwargs.get('filename', hists1[0].GetName()))
     
-    return c, plotter1, plotter2
+    return pads.c, plotter1, plotter2
 
 
 def plot_ratio3(hists1, hists2, hists3, height1=0.55, canvas_size=(1000, 800), outlier_arrows=True, hline2=None, hline3=None, callback=None, save_plot=True, **kwargs):
