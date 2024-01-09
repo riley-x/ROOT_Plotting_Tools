@@ -661,7 +661,7 @@ class Plotter:
         else:
             self.legend_items.extend(legend_items)
 
-    def add_primitives(self, objs, opts='', **kwargs):
+    def add_primitives(self, objs, opts='', pos=None, **kwargs):
         '''
         Similar to [add] but for ROOT primitives like TMarker or TBox. This function does
         not create legend entries, and the added objects do not participate in auto 
@@ -671,9 +671,14 @@ class Plotter:
             self.draw_objs
             self.draw_opts
         '''
-        for i,obj in enumerate(objs):
-            self.draw_objs.append(obj)
-            self.draw_opts.append(_arg(opts, i))
+        draw_opts = [_arg(opts, i) for i in range(len(objs))]
+        if pos is not None:
+            self.draw_objs[pos:pos] = objs
+            self.draw_opts[pos:pos] = draw_opts
+        else:
+            self.draw_objs.extend(objs)
+            self.draw_opts.extend(draw_opts)
+       
 
     def compile(self, **kwargs):
         '''
@@ -1734,8 +1739,7 @@ def _plot(c, objs, callback=None, **kwargs):
 
 def plot(objs, canvas_size=(1000,800), canvas_name='c1', **kwargs):
     c = ROOT.TCanvas(canvas_name, canvas_name, *canvas_size)
-    cache = _plot(c, objs, **kwargs)
-    c.RedrawAxis() # Make the tick marks go above any fill
+    plotter = _plot(c, objs, **kwargs)
     save_canvas(c, kwargs.get('filename', objs[0].GetName()))
 
 
