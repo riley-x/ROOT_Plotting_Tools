@@ -264,7 +264,7 @@ ROOT.gROOT.ForceStyle()
 ROOT.TGaxis.SetMaxDigits(4) # Number of digis to show on an axis, above which exponential notation is used
 
 file_formats = ['png']
-save_transparent = True
+save_transparent_png = True
 
 ##############################################################################
 ###                                PLOTTING                                ###
@@ -282,9 +282,12 @@ class Plotter:
     2. add()
         Adds a list of ROOT objects to the draw stack, with formatting and legend. This
         function can be called repeatedly. All style options should be passed here.
+    3. compile()
+        Processes object-dependent configuration, such as auto ranging, text placement,
+        and creating the legend object. Note that many properties such as [y_range] are
+        not set until [compile] is called.
     3. draw()
-        Processes object-dependent configuration, such as auto ranging and text placement,
-        and draws all objects in the draw stack. 
+        Draws all objects in the draw stack. 
 
     An optional shortcut is to supply the [objs] arguement to __init__(), which will call
     the other steps automatically.
@@ -304,17 +307,57 @@ class Plotter:
     option. This also solves the annoying problem that TGraphs behave differently from TH1s,
     especially regarding axis limits.
 
-    The frame histogram is not created until the call to compile(), which first processes 
-    all objects input with add() to calculate things like automatic axis ranges, etc. Note
-    that you normally don't have to call compile() yourself, since it is called in draw().
+    The frame histogram is not created until the call to [compile], which first processes 
+    all objects input with [add] to calculate things like automatic axis ranges, etc. Note
+    that you normally don't have to call [compile] yourself, since it is called in [draw].
     However, sometimes it useful to create the frame histogram before drawing. For example,
     if you want to retrieve the axis limits before initiating the draw step. You can also 
-    supply your own frame histogram by using the [_frame] option in __init__().
+    supply your own frame histogram by using the [_frame] option in [__init__].
 
-    @param _do_draw
-        Skip draw if false. Only applies when [objs] is not None.
-    @param _frame
-        Supply a custom frame object.
+    --------------------------------- Object Properties ---------------------------------
+    These properties are empty initially and extended by calls to [add].
+
+    @property objs : [TObject]
+        Main list of ROOT objects which dictate algorithms like auto axis ranges and text 
+        placement.
+    @property draw_objs : [TObject]
+        This is a superset of [objs] that may also contain things like TMarker added via
+        [add_primitives]. The order of this list is the draw order of the objects (which
+        is therefore also the z-ordering of the objects). Note that if you modify this
+        list, make sure to also modify [draw_opts].
+    @property draw_opts : [str]
+        A list of plotting options in parallel with [draw_objs], passed to the ROOT 
+        TObject.Draw() function.
+    @property legend_items : [(TObject, str label, str draw_option)]
+        A list of ROOT TLegend entry parameters, in the order they appear. You can modify 
+        it manually, for example to add custom legend entries.
+
+    -------------------------------- Compiled Properties --------------------------------
+    These properties only exist after calling [compile].
+    
+    @property <x/y/z>_range : (float min, float max) or None
+        The axis limits in user coordinates. These may be None, in which case default
+        ROOT behavior is used (you will have to retrieve the ranges yourself via ROOT).
+    @property frame : TH1F or TObject
+        The frame histogram as mentioned above. Generally this will be a custom created
+        TH1F, unless you pass a [_frame] to [__init__]. Also, if plotting a TH2 or one
+        of the ranges above is None, will be the first object in [objs] instead.
+    @property legends
+    @property legend_<width/height/rows/columns>
+    @property data_y_<min/max/pos> : float or None
+        The min/max/min-positive value of the data in [objs].
+
+    -------------------------------- Internal Properties --------------------------------
+    @property text_<...>
+    @property title_<...>
+    @property _y_min_pad_<bot/top> : float
+        The axis-units padding supplied by the user.
+    @property _y_pad_<bot/top> : float
+        A mutable member used to calculate the actual padding needed, which may be 
+        increased from the minimum specified above.
+    @property auto_y_<bot/top> : bool
+        Whether the yrange is fixed or can be adjusted.
+
     '''
 
     def __init__(self, pad,
@@ -323,12 +366,21 @@ class Plotter:
         _do_draw=True, _frame=None,
         **kwargs
     ):
+        '''
+        See file docstring for [kwarg] options.
+
+        @param _do_draw
+            Skip draw if false. Only applies when [objs] is not None.
+        @param _frame
+            Supply a custom frame object.
+        '''
         ### Initialize ###
         self.frame = _frame
-        self.objs = []          # ROOT histograms and graphs. Main objects which dictate algorithms like auto text placement.
-        self.draw_objs = []     # ROOT TObjects to draw. This is a superset of self.objs that may also contain things like TMarker
-        self.draw_opts = []     # ROOT plotting options, parallel to self.draw_objs
-        self.legend_items = []  # list of (obj, label, opt) for legend
+
+        self.objs = []          
+        self.draw_objs = []     
+        self.draw_opts = []     
+        self.legend_items = []  
         self.cache = []
         
         self.compiled = False   # If False, need to call compile()
@@ -344,16 +396,16 @@ class Plotter:
 
         ### Axis ###
         if y_pad is not None:
-            self.y_min_pad_bot = y_pad
-            self.y_min_pad_top = y_pad
+            self._y_min_pad_bot = y_pad
+            self._y_min_pad_top = y_pad
         else:
-            self.y_min_pad_bot = y_pad_bot
-            self.y_min_pad_top = y_pad_top
-        self.y_pad_bot = self.y_min_pad_bot
-        self.y_pad_top = self.y_min_pad_top
+            self._y_min_pad_bot = y_pad_bot
+            self._y_min_pad_top = y_pad_top
+        self._y_pad_bot = self._y_min_pad_bot 
+        self._y_pad_top = self._y_min_pad_top
 
         ### Other ###
-        self.args = kwargs
+        self.args = kwargs # This is a cache of kwargs that we pass to [compile] and [draw] so that you can specify all the relevant args up front
 
         ### Draw ###
         # Shorcut: if objs is supplied to the constructor, draw immediately.
@@ -445,32 +497,11 @@ class Plotter:
         if self.is_2d: return kwargs.get('x_range')
         return _auto_x_range(objs=self.objs, **kwargs)
 
-    def _fix_bad_yticks(self, y_min, y_max, pad_bot, pad_top, ydivs=None, **kwargs):
-        '''
-        When the number of ydivs is small, ROOT sometimes messes up the y axis ticks. 
-        This function tries to fix this by just expanding the axis limits iteratively.
-        '''
-        if pad_bot == 0 and pad_top == 0: return y_min, y_max
-        if ydivs is not None and ydivs % 100 <= 5:
-            for i in range(3): # try three times at most
-                # This is the funciton ROOT seems to use for the ticks
-                nbins = ctypes.c_int(0)
-                bin_low = ctypes.c_double(0)
-                bin_high = ctypes.c_double(0)
-                bin_width = ctypes.c_double(0)
-                ROOT.THLimitsFinder.Optimize(y_min, y_max, ydivs % 100, bin_low, bin_high, nbins, bin_width, '')
-                #print(newrange, bin_low, bin_high, nbins, bin_width)
-
-                # This seems to be when the ticks aren't optimized?
-                need_fix = (nbins.value == 0 or y_min > bin_low.value or y_max < bin_high.value)
-                if not need_fix: break
-                    
-                diff = y_max - y_min
-                if pad_bot > 0: y_min -= diff * 0.1
-                if pad_top > 0: y_max += diff * 0.1
-        return y_min, y_max
-
     def _get_padded_range(self, data_min, data_max, pad_bot, pad_top):
+        '''
+        Returns the user-coordinate range given the data min/max (also user coords) and 
+        the amount of padding. Here the padding is given in canvas or axis units.
+        '''
         data_height = 1.0 - pad_bot - pad_top
         diff = data_max - data_min
         out_min = data_min - pad_bot * diff / data_height
@@ -489,6 +520,7 @@ class Plotter:
         data_min, data_max = self.y_range
         if data_min >= 0 and not self.pad.GetLogy(): 
             if y_min is None or y_min < 0: y_min = 0
+            # Here we enforce that y_min >= 0 when the data is all positive
 
         ### Adjust for log ###
         if self.logy:
@@ -498,8 +530,8 @@ class Plotter:
             if y_max is not None: y_max = np.log10(y_max)
 
         ### First pass padding ###
-        pad_bot = self.y_pad_bot if self.auto_y_bot else 0
-        pad_top = self.y_pad_top if self.auto_y_top else 0
+        pad_bot = self._y_pad_bot if self.auto_y_bot else 0
+        pad_top = self._y_pad_top if self.auto_y_top else 0
         out_min, out_max = self._get_padded_range(data_min, data_max, pad_bot, pad_top)
 
         ### Apply constraints ###
@@ -520,7 +552,7 @@ class Plotter:
             out_min = np.power(10, out_min)
             out_max = np.power(10, out_max)
         else:
-            out_min, out_max = self._fix_bad_yticks(out_min, out_max, pad_bot, pad_top, **kwargs)
+            out_min, out_max = _fix_bad_yticks(out_min, out_max, pad_bot == 0, pad_top == 0, ydivs=kwargs.get('ydivs'))
 
         ### Output ###
         self.y_range = (out_min, out_max)
@@ -679,14 +711,14 @@ class Plotter:
             self.draw_objs.extend(objs)
             self.draw_opts.extend(draw_opts)
        
-
     def compile(self, **kwargs):
         '''
         This function should be called after all [add] calls. This will calculate ranges,
         make the legend, and place the text.
 
-        WARNING due to a ROOT bug, calls to GetXsize() break after saving the canvas. So 
-        don't call compile() again after saving the canvas. Can use [reset_pad] though.
+        TODO due to ROOT weirdness, calls to GetXsize() may break after saving the canvas. 
+        So be careful when calling compile() again after saving the canvas. Can use 
+        [reset_pad] though.
 
         https://root-forum.cern.ch/t/tlatex-getxsize-bug/57515
         '''
@@ -772,7 +804,7 @@ class Plotter:
                 List of lines, where each line is a pair (y, texts) and `texts` is a list
                 of pairs (x, ROOT.TLatex). The x and y are offsets from the top-left of 
                 the text bounding box, referring to the left edge and baseline, assuming 
-                top-left alignment.
+                bottom-left alignment.
             self.titles
                 A flattened version of the above list, with just the TLatex objects.
             self.title_height
@@ -889,7 +921,7 @@ class Plotter:
 
         ### List of labels ###
         if len(legend) != len(objs):
-            raise RuntimeError(f'Plotter._make_legend() mismatched lengths. Got {len(legend)}, expected {len(objs)}.')
+            raise RuntimeError(f'Plotter._get_legend_list() mismatched lengths. Got {len(legend)}, expected {len(objs)}.')
         if legend_opts is None:
             legend_opts = lambda i: self._default_legend_opt(_arg(opts, i))
 
@@ -1030,7 +1062,7 @@ class Plotter:
             coordinate conversion functions, and the titles and legend have been created.
         @sets
             self.text_pos
-            self.y_pad_top
+            self._y_pad_top
 
         Note this function will temporarily place the text items. Make sure to reset if 
         needed.
@@ -1075,11 +1107,11 @@ class Plotter:
             if min_pad is None or req_pad < min_pad:
                 min_pad = req_pad
                 min_pad_pos = text_pos
-                if min_pad < self.y_min_pad_top: break
+                if min_pad < self._y_min_pad_top: break
 
         ### Set outputs ###
         self.text_pos = min_pad_pos
-        self.y_pad_top = max(self.y_min_pad_top, min_pad)
+        self._y_pad_top = max(self._y_min_pad_top, min_pad)
                 
     def _get_required_top_padding(self, data_locs_axes, y_text_data_spacing=0.02):
         '''
@@ -1106,7 +1138,7 @@ class Plotter:
 
         ### Iterate over data points ###
         max_pad = 0
-        pad_bot = self.y_pad_bot if self.auto_y_bot else 0
+        pad_bot = self._y_pad_bot if self.auto_y_bot else 0
         for x, y in data_locs_axes:
             for left,right,bottom in occlusions:
                 if x > left and x < right and y > bottom:
@@ -1538,6 +1570,31 @@ def _fix_axis_sizing(h, pad,
     # The tick scale is affected by the margins: tick_length = pixel_size / ((pad2H - marginB - marginT) / pad2H * pad2W)
     # Note there seems to be a minimum tick length for the y axis...
 
+def _fix_bad_yticks(y_min, y_max, bot_is_fixed, top_is_fixed, ydivs):
+    '''
+    When the number of ydivs is small, ROOT sometimes messes up the y axis ticks. 
+    This function tries to fix this by just expanding the axis limits iteratively.
+    '''
+    if bot_is_fixed and top_is_fixed: return y_min, y_max
+    if ydivs is not None and ydivs % 100 <= 5:
+        for i in range(3): # try three times at most
+            # This is the funciton ROOT seems to use for the ticks
+            nbins = ctypes.c_int(0)
+            bin_low = ctypes.c_double(0)
+            bin_high = ctypes.c_double(0)
+            bin_width = ctypes.c_double(0)
+            ROOT.THLimitsFinder.Optimize(y_min, y_max, ydivs % 100, bin_low, bin_high, nbins, bin_width, '')
+            #print(newrange, bin_low, bin_high, nbins, bin_width)
+
+            # This seems to be when the ticks aren't optimized?
+            need_fix = (nbins.value == 0 or y_min > bin_low.value or y_max < bin_high.value)
+            if not need_fix: break
+                
+            diff = y_max - y_min
+            if not bot_is_fixed: y_min -= diff * 0.1
+            if not top_is_fixed: y_max += diff * 0.1
+    return y_min, y_max
+
 def _outliers(frame, hists):
     '''
     Draws outlier arrows for points that aren't in the yrange of the graph. 
@@ -1649,14 +1706,28 @@ def pad_to_axes(pad, frame, coord):
     return pad_to_axes_x(pad, frame, coord[0]), pad_to_axes_y(pad, frame, coord[1])
 
 
+_x1 = ctypes.c_double(1.)
+_x2 = ctypes.c_double(1.)
+_y1 = ctypes.c_double(1.)
+_y2 = ctypes.c_double(1.)
+
 def get_text_size(text, text_size):
     '''
-    Returns the (width, height) of [text] in pad (NDC) units.
+    Returns the (width, height) of [text] in NDC (canvas) units.
+
+    NOTE that GetXsize() returns the size in user coordinates. The user coordinates are 
+    [0, 1] on both axes by default. These then seem to be set to correspond with the 
+    user units on the current axes, accounting for the proportionate padding/placement of 
+    the axes (see TPad.GetRangeAxis). This happens when the canvas is PRINTED, not just 
+    drawn on; in general happens when you call Update() I think.
+
+    https://root.cern/manual/graphics/#coordinate-systems-of-a-pad
     '''
+    ROOT.gPad.GetRange(_x1, _y1, _x2, _y2)
     tex = ROOT.TLatex(0, 0, text)
     tex.SetTextFont(42)
     tex.SetTextSize(text_size)
-    return tex.GetXsize(), tex.GetYsize()
+    return tex.GetXsize() / (_x2.value - _x1.value), tex.GetYsize() / (_y2.value - _y1.value)
 
 
 ##############################################################################
@@ -2458,7 +2529,7 @@ def save_canvas(c, filename):
     
     ### Save for each filetype ###
     for t in file_types:
-        if save_transparent and t == 'png':
+        if save_transparent_png and t == 'png':
             save_canvas_transparent(c, filename)
         else:
             c.Print(filename + '.' + t)
