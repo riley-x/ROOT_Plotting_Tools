@@ -790,6 +790,7 @@ class Plotter:
             self.titles.append(tex)
             height = tex.GetYsize()
 
+        # Here we align bottom so the text has the same baseline, but then we need to add the height first
         y += height
         self.title_lines.append((y, texts))
         return y
@@ -803,8 +804,9 @@ class Plotter:
             self.title_lines          
                 List of lines, where each line is a pair (y, texts) and `texts` is a list
                 of pairs (x, ROOT.TLatex). The x and y are offsets from the top-left of 
-                the text bounding box, referring to the left edge and baseline, assuming 
-                bottom-left alignment.
+                the text bounding box, and are used to directly place the TLatex depending
+                on its alignment. For example, when left-top aligned, the x-y refer to the 
+                left edge and baseline.
             self.titles
                 A flattened version of the above list, with just the TLatex objects.
             self.title_height
@@ -816,7 +818,7 @@ class Plotter:
         if title:
             y = self._create_title(y, title)
             y += self.text_spacing
-        
+
         if subtitle is not None:
             if isinstance(subtitle, str):
                 subtitle = [subtitle]
@@ -827,24 +829,14 @@ class Plotter:
                 tex.SetNDC()
                 tex.SetTextFont(42)
                 tex.SetTextSize(self.text_size)
-                tex.SetTextAlign(ROOT.kVAlignBottom + ROOT.kHAlignLeft)
+                tex.SetTextAlign(ROOT.kVAlignTop + ROOT.kHAlignLeft)
+                # We use top align here and add the full height of the text below. This 
+                # ensures that the subtitle lines never overlap, but will make the baselineskip
+                # between each line inconsistent. 
                 
-                height = tex.GetYsize()
-                y += height
-
-                # ROOT TLatex bottom align seems to align to baseline. But then
-                # subtracting by the full height is too much when there are glyphs
-                # below the baseline. So this is a hardcode fix...not sure how to 
-                # get height from baseline.
-                if '#splitline' in sub: 
-                    diff = height - self.text_size
-                    y -= diff
-
                 self.title_lines.append([y, [[0, tex]]])
                 self.titles.append(tex)
-
-                if '#splitline' in sub:
-                    y += diff
+                y += get_tlatex_size(tex)[1]
 
         self.title_height = y
         self._format_titles()
@@ -1727,7 +1719,13 @@ def get_text_size(text, text_size):
     tex = ROOT.TLatex(0, 0, text)
     tex.SetTextFont(42)
     tex.SetTextSize(text_size)
+    return get_tlatex_size(tex)
+
+
+def get_tlatex_size(tex):
+    ROOT.gPad.GetRange(_x1, _y1, _x2, _y2)
     return tex.GetXsize() / (_x2.value - _x1.value), tex.GetYsize() / (_y2.value - _y1.value)
+
 
 
 ##############################################################################
@@ -2718,7 +2716,7 @@ def reduced_legend_hists(shape, opts=None):
 
 
 ##############################################################################
-###                               UTILITIES                                ###
+###                          HISTOGRAM UTILITIES                           ###
 ##############################################################################
 
 def integral_user(h, user_range=None, use_width=False, return_error=False):
@@ -2937,6 +2935,54 @@ def rebin2d(h, bins_x, bins_y, name = '_rebin2d'):
             h_new.SetBinError(x_new, y_new, e**0.5)
 
     return h_new
+
+
+def projectX(h, yrange, new_name=None):
+    '''
+    Projects a 2d histogram onto its x-axis using user (data) coordinates.
+
+    @param yrange 
+        Data values [min, max], exclusive upper end (MUST ALIGN WITH BINS).
+        Can also be a string "min,max".
+    '''
+    if isinstance(yrange, str):
+        yrange = [float(x) for x in yrange.split(',')]
+    y0 = h.GetYaxis().FindFixBin(yrange[0])
+    y1 = h.GetYaxis().FindFixBin(yrange[1]) - 1
+    if y1 < y0:
+        raise RuntimeError(f'projectX() invalid yrange: {yrange}')
+    if new_name is None:
+        base_name = f'{h.GetName()}_px{y0}-{y1}'
+        new_name = base_name
+        i = 1
+        while ROOT.gDirectory.FindObject(new_name):
+            new_name = base_name + '_' + str(i)
+            i += 1
+    return h.ProjectionX(new_name, y0, y1)
+
+
+def projectY(h, xrange, new_name=None):
+    '''
+    Projects a 2d histogram onto its y-axis using user (data) coordinates.
+    
+    @param xrange 
+        Data values [min, max], exclusive upper end (MUST ALIGN WITH BINS).
+        Can also be a string "min,max".
+    '''
+    if isinstance(xrange, str):
+        xrange = [float(x) for x in xrange.split(',')]
+    x0 = h.GetXaxis().FindFixBin(xrange[0])
+    x1 = h.GetXaxis().FindFixBin(xrange[1]) - 1
+    if x1 < x0:
+        raise RuntimeError(f'projectY() invalid xrange: {xrange}')
+    if new_name is None:
+        base_name = f'{h.GetName()}_py{x0}-{x1}'
+        new_name = base_name
+        i = 1
+        while ROOT.gDirectory.FindObject(new_name):
+            new_name = base_name + '_' + str(i)
+            i += 1
+    return h.ProjectionY(new_name, x0, x1)
 
 
 def graph_divide(a, b, errors_a=True, errors_b=True):
