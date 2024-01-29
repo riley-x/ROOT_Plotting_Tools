@@ -22,6 +22,8 @@ you can specify style in aggregate. Typical usage would look like:
         filename = 'my_plot.png',
     )
 
+Please see the `examples/` folder for more examples!
+
 The input also doesn't have to be all histograms, you can include TF1s and TGraphs too. 
 In addition, this script takes care of several things missing in ROOT: automatic axis
 ranges, easier legend placement, title text and subtext, etc. It also defines helper
@@ -62,8 +64,11 @@ plot_discrete_bins
     chart). Useful when histograms are very similar, and would overlap otherwise.
 Plotter
     The underlying plotting class used by everything above. Useful for creating 
-    custom images containing multiple canvases.
+    custom images containing multiple canvases, or more complicated series plots.
 
+    For example, if you want to plot a stack of histograms with some overlaid info, like
+    data points and statistical errors, it's much easier to use the [Plotter] class 
+    directly. See `examples/stack_plot.py` for an example.
 
 
 
@@ -204,7 +209,16 @@ legend_opts                                             default: context-depende
 legend_columns                                          default: 1
     Number of columns to split the legend across.
 
+    
+OTHER
+-----------------------------------------------------
+stack                                                   default: False
+    Plots a list of histograms as a stack. The histograms are added cumulatively to create
+    the stack, with the first histogram being the bottom of the stack. The legend is 
+    reversed to match the stack order visually.
 
+    Note that this option only works with TH1s. See also `examples/stack_plot.py` for 
+    adding extra plot items outside of the stack.
 
 -----------------------------------------------------------------------------------------
 COLORS
