@@ -843,7 +843,7 @@ class Plotter:
 
         if title:
             y = self._create_title(y, title)
-            y += self.text_spacing
+            y += 4 * self.text_spacing
 
         if subtitle is not None:
             if isinstance(subtitle, str):
