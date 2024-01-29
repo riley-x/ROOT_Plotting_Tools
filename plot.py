@@ -688,6 +688,7 @@ class Plotter:
         for i,obj in enumerate(objs):
             _apply_common_opts(obj, i, **kwargs)
             draw_opts.append(_arg(opts, i))
+            obj.__rxplot_draw_opt = draw_opts[-1] # this just sets a python attribute for convenience
 
             if draw_opts[i] == '' and orig_objs[i].ClassName().startswith('TF'):
                 draw_opts[i] = 'C' # this is default draw option for TF1, but since we replace it with the hist, must manually set
@@ -968,7 +969,7 @@ class Plotter:
             if width > _max: _max = width
         return _max
 
-    def _make_legend(self, legend_columns=1, **_):
+    def _make_legend(self, legend_columns=1, legend_vertical_order=False, **_):
         '''
         Creates a ROOT.TLegend with entries from [self.legend_items]. Also measures the 
         legend sizing.
@@ -988,36 +989,42 @@ class Plotter:
             self.legend_columns = 1
             return
         
-        if (legend_columns != 1):
-            raise NotImplementedError('Legend columns > 1')
-
         ### Legend size ###
         # These are in pad units, i.e. fraction of pad width
         leg_symbol_width = 0.05 # Symbol size
         leg_symbol_pad = 0.01   # Whitespace between symbol and label
         leg_label_width = self._max_legend_label_width(self.legend_items)
+        self.legend_column_separation = 0.01
         self.legend_columns = legend_columns
         self.legend_rows = math.ceil(len(self.legend_items) / legend_columns)
-        self.legend_width = (leg_symbol_width + leg_symbol_pad + leg_label_width) * legend_columns
+        self.legend_column_width = leg_symbol_width + leg_symbol_pad + leg_label_width
+        self.legend_width = self.legend_column_width * legend_columns + self.legend_column_separation * (legend_columns - 1)
         
         ### Legend ###
         # We use a single ROOT.TLegend per entry to have better fine-grained control
         # on entry placement.
-        for i,entry in enumerate(self.legend_items):
-            legend = ROOT.TLegend()
-            legend.SetFillColor(colors.transparent_white)
-            legend.SetLineColor(0)
-            legend.SetBorderSize(0)
-            legend.SetMargin(leg_symbol_width / self.legend_width) # SetMargin expects the fractional width relative to the legend...cause that's intuitive
-            legend.SetTextSize(self.text_size)
-            legend.SetTextFont(42) # Default ATLAS font
-            legend.AddEntry(*entry)
-            legend.height = max(self.text_size, get_text_size(entry[1], self.text_size)[1]) # this merely sets a python attribute
-            self.legends.append(legend)
+        for column in range(self.legend_columns):
+            column_height = 0
+            if legend_vertical_order:
+                column_items = self.legend_items[column * self.legend_rows:(column + 1) * self.legend_rows]
+            else:
+                column_items = self.legend_items[column:len(self.legend_items):self.legend_columns]
+            for i,entry in enumerate(column_items):
+                legend = ROOT.TLegend()
+                legend.SetFillColor(colors.transparent_white)
+                legend.SetLineColor(0)
+                legend.SetBorderSize(0)
+                legend.SetMargin(leg_symbol_width / self.legend_column_width) # SetMargin expects the fractional width relative to the legend...cause that's intuitive
+                legend.SetTextSize(self.text_size)
+                legend.SetTextFont(42) # Default ATLAS font
+                legend.AddEntry(*entry)
+                legend.height = max(self.text_size, get_text_size(entry[1], self.text_size)[1]) # this merely sets a python attribute
+                self.legends.append(legend)
 
-            if (i != 0):
-                self.legend_height += self.text_spacing
-            self.legend_height += legend.height
+                if i != 0:
+                    column_height += self.text_spacing
+                column_height += legend.height
+            self.legend_height = max(self.legend_height, column_height)
 
     def _place_legend(self, x, y, align):
         '''
@@ -1030,13 +1037,16 @@ class Plotter:
         else:
             al = ROOT.kHAlignRight
             x -= self.legend_width
-        for legend in self.legends:
-            legend.SetTextAlign(al + ROOT.kVAlignCenter)
-            legend.SetX1(x)
-            legend.SetX2(x + self.legend_width)
-            legend.SetY1(y - legend.height)
-            legend.SetY2(y)
-            y -= legend.height + self.text_spacing
+        for column in range(self.legend_columns):
+            start_x = x + (self.legend_column_width + self.legend_column_separation) * column
+            current_y = y
+            for legend in self.legends[column*self.legend_rows:(column+1)*self.legend_rows]:
+                legend.SetTextAlign(al + ROOT.kVAlignCenter)
+                legend.SetX1(start_x)
+                legend.SetX2(start_x + self.legend_column_width)
+                legend.SetY1(current_y - legend.height)
+                legend.SetY2(current_y)
+                current_y -= legend.height + self.text_spacing
 
 
     #####################################################################################
@@ -1072,7 +1082,7 @@ class Plotter:
     def has_text(self):
         return bool(self.title_lines or self.legends)
 
-    def _auto_text_pos_and_pad(self, **kwargs):
+    def _auto_text_pos_and_pad(self, **_):
         '''
         Finds the best 'text_pos' to not overlap text with the plot, and the y_pad_top
         needed.
@@ -1108,12 +1118,25 @@ class Plotter:
         
         ### Parse data ###
         data_locs = {} # dictionary mapping x values to maximum y values, in user coordiantes
-        for obj in self.objs:
-            for x,y,e_hi,e_lo in iter_root(obj):
-                val = data_locs.get(x)
-                if val is None or y > val:
-                    data_locs[x] = y
+        def update_loc(x, y):
+            val = data_locs.get(x)
+            if val is None or y > val:
+                data_locs[x] = y
 
+        for obj in self.objs:
+            for entry in IterRoot(obj):
+                update_loc(entry.x(), entry.y())
+                if 'TH1' in obj.ClassName() or 'TProfile' in obj.ClassName():
+                    if obj.__rxplot_draw_opt != 'P':
+                        # All other plot options use the full width of the bin, so only 'P' is where
+                        # we don't check the x_low/x_high
+                        update_loc(entry.x_low(), entry.y())
+                        update_loc(entry.x_high(), entry.y())
+                else:
+                    update_loc(entry.x_low(), entry.y())
+                    update_loc(entry.x_high(), entry.y())
+                # TODO vertical error bars too?
+                   
         data_locs_axes = [] # in axes coordiantes
         for x,y in data_locs.items():
             data_locs_axes.append(self.user_to_axes(x, y))
@@ -1149,7 +1172,7 @@ class Plotter:
                 self.pad_to_axes_y(tex.GetY() - y_text_data_spacing), # all text is bottom-aligned
             ))
         if len(self.legends) > 0:
-            for legend in self.legends[-self.legend_columns:]:
+            for legend in self.legends:
                 occlusions.append((
                     self.pad_to_axes_x(legend.GetX1()),
                     self.pad_to_axes_x(legend.GetX2()),
@@ -3099,7 +3122,7 @@ class IterRoot:
         elif 'TGraph' in self.obj.ClassName():
             return self.obj.GetPointX(i)
         else:
-            raise RuntimeError('IterRoot() unknown class ' + self.obj.ClassName())
+            raise NotImplementedError('IterRoot() unknown class ' + self.obj.ClassName())
 
     def y(self, delta=0):
         i = self._get_i(delta)
@@ -3121,6 +3144,23 @@ class IterRoot:
         else:
             raise RuntimeError('IterRoot() unknown class ' + self.obj.ClassName())
 
+    def x_low(self, delta=0):
+        i = self._get_i(delta)
+        if 'TH1' in self.obj.ClassName() or 'TProfile' in self.obj.ClassName():
+            return self.obj.GetBinLowEdge(i + 1)
+        elif self.obj.ClassName() == 'TGraph':
+            return self.obj.GetPointX(i)
+        else:
+            raise NotImplementedError('IterRoot.x_low() unknown class ' + self.obj.ClassName())
+    
+    def x_high(self, delta=0):
+        i = self._get_i(delta)
+        if 'TH1' in self.obj.ClassName() or 'TProfile' in self.obj.ClassName():
+            return self.obj.GetBinLowEdge(i + 2)
+        elif self.obj.ClassName() == 'TGraph':
+            return self.obj.GetPointX(i)
+        else:
+            raise NotImplementedError('IterRoot.x_high() unknown class ' + self.obj.ClassName())
 
     def set_y(self, value, delta=0):
         i = self._get_i(delta)
