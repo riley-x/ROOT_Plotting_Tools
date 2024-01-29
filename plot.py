@@ -633,13 +633,18 @@ class Plotter:
     ###                                MAIN PROCESSING                                ###
     #####################################################################################
 
-    def add(self, objs, stack=False, opts='', pos=None, legend_pos=None, **kwargs):
+    def add(self, objs, 
+            opts='', pos=None, legend_pos=None,
+            stack=False, reverse_legend_for_stack=True,  
+            **kwargs):
         '''
         Adds a list of objects to the plotter.
 
-        @param stack
-            If True, [objs] must be a list of TH1s that will be added into a stack. No
-            other objects should be included.
+        @param opts
+            The ROOT drawing option for each object. Like the formatting options, this
+            can be a single string, applied to each of [objs], a list in parallel with
+            [objs], or a function that takes an index into [objs] and returns the string
+            option.
         @param pos
             By default, objects from subsequent calls of [add] are plotted on top of 
             current objects. Set [pos] to an index in the list [draw_objs] to alter
@@ -647,6 +652,13 @@ class Plotter:
         @param legend_pos
             Index of where to insert the legend entries for these [objs]. By default
             will append them to the end.
+        @param stack
+            If True, [objs] must be a list of TH1s that will be added into a stack. No
+            other objects should be included.
+        @param reverse_legend_for_stack
+            By default, if [stack], the legend will be reversed, which matches the visual 
+            order of the histograms in the plot. Supplying [legend_order] will override
+            this option.
         @param kwargs
             Options for [_apply_common_opts] and [_get_legend_list].
 
@@ -691,7 +703,7 @@ class Plotter:
         if stack: 
             objs.reverse()
             draw_opts.reverse()
-            if 'legend_order' not in kwargs:
+            if reverse_legend_for_stack and 'legend_order' not in kwargs:
                 legend_items.reverse()
 
         ### Output ###
