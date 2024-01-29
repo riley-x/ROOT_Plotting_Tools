@@ -693,7 +693,9 @@ class Plotter:
                 draw_opts[i] = 'C' # this is default draw option for TF1, but since we replace it with the hist, must manually set
             if (len(draw_opts) > 1 or self.draw_opts) and 'TH2' in objs[0].ClassName() and 'Z' in draw_opts[-1]:
                 warning('plotter::add() 2D histograms plotted with "Z" option must be passed first in order for z-axis settings to work!')
-
+            if 'E1' in draw_opts[-1] and ROOT.gStyle.GetEndErrorSize() == 0:
+                warning("It looks like you're trying to draw a histogram with the 'E1' option, but the style is forcing the end caps to 0. Use ROOT.gStyle.SetEndErrorSize(4) to fix.")
+                
         ### Legend ###
         if stack and 'legend_opts' not in kwargs:
             kwargs['legend_opts'] = 'F'
