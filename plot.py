@@ -3072,6 +3072,7 @@ def graph_divide(a, b, errors_a=True, errors_b=True):
     return out
 
 
+@DeprecationWarning
 def iter_root(obj):
     if 'TH1' in obj.ClassName() or 'TProfile' in obj.ClassName():
         for i in range(obj.GetNbinsX()):
