@@ -3091,6 +3091,18 @@ def iter_root(obj):
 
 
 class IterRoot:
+    '''
+    This class is a uniform iterator for ROOT TObjects. It is used simply like
+
+        for entry in IterRoot(obj):
+            # entry is the same IterRoot object
+            print(entry.x(), entry.y())
+
+    Each method accepts a [delta] arguement, which lets you access neighboring bins
+    easily:
+
+        diff = entry.y() - entry.y(-1)
+    '''
     def __init__(self, obj):
         self.obj = obj
         self.i = -1
@@ -3099,9 +3111,10 @@ class IterRoot:
         elif 'TGraph' in obj.ClassName():
             self.n = obj.GetN()
         else:
-            raise RuntimeError('IterRoot() unknown class ' + obj.ClassName())
+            raise NotImplementedError('IterRoot() unknown class ' + obj.ClassName())
         
     def __iter__(self):
+        self.i = -1
         return self
 
     def __next__(self):
@@ -3113,7 +3126,7 @@ class IterRoot:
     def _get_i(self, delta):
         i = self.i + delta
         if i < 0 or i >= self.n:
-            raise RuntimeError(f'IterRoot() out of bounds: {i} (size: {self.n})')
+            raise NotImplementedError(f'IterRoot._get_i() out of bounds: {i} (size: {self.n})')
         return i
     
     def x(self, delta=0):
@@ -3123,7 +3136,7 @@ class IterRoot:
         elif 'TGraph' in self.obj.ClassName():
             return self.obj.GetPointX(i)
         else:
-            raise NotImplementedError('IterRoot() unknown class ' + self.obj.ClassName())
+            raise NotImplementedError('IterRoot.x() unknown class ' + self.obj.ClassName())
 
     def y(self, delta=0):
         i = self._get_i(delta)
@@ -3132,7 +3145,7 @@ class IterRoot:
         elif 'TGraph' in self.obj.ClassName():
             return self.obj.GetPointY(i)
         else:
-            raise RuntimeError('IterRoot() unknown class ' + self.obj.ClassName())
+            raise NotImplementedError('IterRoot.y() unknown class ' + self.obj.ClassName())
         
     def e(self, delta=0):
         i = self._get_i(delta)
@@ -3143,7 +3156,7 @@ class IterRoot:
         elif 'TGraphErrors' == self.obj.ClassName() or 'TGraphAsymmErrors' == self.obj.ClassName():
             return self.obj.GetErrorY(i)
         else:
-            raise RuntimeError('IterRoot() unknown class ' + self.obj.ClassName())
+            raise NotImplementedError('IterRoot.e() unknown class ' + self.obj.ClassName())
 
     def x_low(self, delta=0):
         i = self._get_i(delta)
