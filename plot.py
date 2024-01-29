@@ -1866,7 +1866,7 @@ def plot_ratio(hists1, hists2, outlier_arrows=True, hline=None, hline2=None, cal
         user coordinates. Set to None to omit. Can also be a dictionary of arguments
         to [plotter.draw_hline].
     @param hline2
-        Alias to hline
+        Alias to [hline]
     @param outlier_arrows
         Draws small triangles at the top/bottom of the ratio pad to indicate points that
         are outside of the plot range.
@@ -1897,7 +1897,7 @@ def plot_ratio(hists1, hists2, outlier_arrows=True, hline=None, hline2=None, cal
         if isinstance(hline, dict):
             plotter2.draw_hline(**hline)
         else:
-            plotter2.draw_hline(hline)
+            plotter2.draw_hline(hline, style=ROOT.kDashed)
         
     ### Draw out-of-bounds arrows ###
     if outlier_arrows: plotter2.draw_outliers()
