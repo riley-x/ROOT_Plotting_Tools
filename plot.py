@@ -1653,9 +1653,11 @@ def _outliers(frame, hists):
     markers = []
     for h in hists:
         if not('TH1' in h.ClassName() or 'TGraph' in h.ClassName() or 'TProfile' in h.ClassName()): continue
-        for x,v,e_hi,e_lo in iter_root(h):
+        for entry in IterRoot(h):
+            x = entry.x()
+            v = entry.y()
             if x < x_min or x > x_max: continue
-            if v == 0 and e_hi == 0 and e_lo == 0: continue
+            if v == 0 and entry.e() == 0: continue
             elif y_max is not None and v > y_max:
                 m = ROOT.TMarker(x, y_max - y_pad, ROOT.kOpenTriangleUp)
             elif y_min is not None and v < y_min:
@@ -3071,25 +3073,6 @@ def graph_divide(a, b, errors_a=True, errors_b=True):
         out.SetPointEYlow(i, r * err_lo**0.5)
 
     return out
-
-
-@DeprecationWarning
-def iter_root(obj):
-    if 'TH1' in obj.ClassName() or 'TProfile' in obj.ClassName():
-        for i in range(obj.GetNbinsX()):
-            yield (obj.GetBinCenter(i+1), obj.GetBinContent(i+1), obj.GetBinError(i+1), obj.GetBinError(i+1))
-    elif 'TGraph' == obj.ClassName():
-        for i in range(obj.GetN()):
-            yield (obj.GetPointX(i), obj.GetPointY(i), 0, 0)
-    elif 'TGraphErrors' == obj.ClassName():
-        for i in range(obj.GetN()):
-            yield (obj.GetPointX(i), obj.GetPointY(i), obj.GetErrorY(i), obj.GetErrorY(i))
-    elif 'TGraphAsymmErrors' == obj.ClassName():
-        for i in range(obj.GetN()):
-            yield (obj.GetPointX(i), obj.GetPointY(i), obj.GetErrorYhigh(i), obj.GetErrorYlow(i))
-    else:
-        raise RuntimeError('iter_root() unknown class ' + obj.ClassName())
-
 
 class IterRoot:
     '''
