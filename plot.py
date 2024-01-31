@@ -983,10 +983,12 @@ class Plotter:
         '''
         self.legends = []
         self.legend_height = 0
+        self.legend_column_separation = 0.01
         if not self.legend_items:
+            self.legend_rows = 0
+            self.legend_columns = 0
             self.legend_width = 0
-            self.legend_rows = 1
-            self.legend_columns = 1
+            self.legend_column_width = 0
             return
         
         ### Legend size ###
@@ -994,7 +996,6 @@ class Plotter:
         leg_symbol_width = 0.05 # Symbol size
         leg_symbol_pad = 0.01   # Whitespace between symbol and label
         leg_label_width = self._max_legend_label_width(self.legend_items)
-        self.legend_column_separation = 0.01
         self.legend_columns = legend_columns
         self.legend_rows = math.ceil(len(self.legend_items) / legend_columns)
         self.legend_column_width = leg_symbol_width + leg_symbol_pad + leg_label_width
