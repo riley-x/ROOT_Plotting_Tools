@@ -3074,6 +3074,7 @@ def graph_divide(a, b, errors_a=True, errors_b=True):
 
     return out
 
+
 class IterRoot:
     '''
     This class is a uniform iterator for ROOT TObjects. It is used simply like
@@ -3148,6 +3149,8 @@ class IterRoot:
             return self.obj.GetBinLowEdge(i + 1)
         elif self.obj.ClassName() == 'TGraph':
             return self.obj.GetPointX(i)
+        elif self.obj.ClassName() == 'TGraphErrors':
+            return self.obj.GetErrorX(i)
         else:
             raise NotImplementedError('IterRoot.x_low() unknown class ' + self.obj.ClassName())
     
@@ -3157,6 +3160,8 @@ class IterRoot:
             return self.obj.GetBinLowEdge(i + 2)
         elif self.obj.ClassName() == 'TGraph':
             return self.obj.GetPointX(i)
+        elif self.obj.ClassName() == 'TGraphErrors':
+            return self.obj.GetErrorX(i)
         else:
             raise NotImplementedError('IterRoot.x_high() unknown class ' + self.obj.ClassName())
 
