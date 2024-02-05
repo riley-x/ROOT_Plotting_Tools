@@ -1835,6 +1835,7 @@ class RatioPads:
         'ignore_outliers_y': 4, 
         'title_offset_x': 1.0, 
         'title': None, 
+        'legend': None,
     }
 
     def make_plotter1(self, **kwargs):
@@ -1912,8 +1913,6 @@ def plot_ratio(hists1, hists2, outlier_arrows=True, hline=None, hline2=None, cal
     pads = RatioPads(**kwargs)
 
     ### Draw main histo, get error histos
-    kwargs.setdefault('text_offset_bottom', 0.07) 
-    kwargs.setdefault('remove_x_labels', True) 
     plotter1 = pads.make_plotter1(objs=hists1, **kwargs)
 
     ### Draw ratio plot ###
