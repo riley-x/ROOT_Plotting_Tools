@@ -3149,7 +3149,9 @@ class IterRoot:
         elif self.obj.ClassName() == 'TGraph':
             return self.obj.GetPointX(i)
         elif self.obj.ClassName() == 'TGraphErrors':
-            return self.obj.GetErrorX(i)
+            return self.obj.GetPointX(i) - self.obj.GetErrorX(i)
+        elif self.obj.ClassName() == 'TGraphAsymmErrors':
+            return self.obj.GetPointX(i) - self.obj.GetErrorXlow(i)
         else:
             raise NotImplementedError('IterRoot.x_low() unknown class ' + self.obj.ClassName())
     
@@ -3160,7 +3162,9 @@ class IterRoot:
         elif self.obj.ClassName() == 'TGraph':
             return self.obj.GetPointX(i)
         elif self.obj.ClassName() == 'TGraphErrors':
-            return self.obj.GetErrorX(i)
+            return self.obj.GetPointX(i) + self.obj.GetErrorX(i)
+        elif self.obj.ClassName() == 'TGraphAsymmErrors':
+            return self.obj.GetPointX(i) + self.obj.GetErrorXhigh(i)
         else:
             raise NotImplementedError('IterRoot.x_high() unknown class ' + self.obj.ClassName())
 
