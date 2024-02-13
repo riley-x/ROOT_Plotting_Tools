@@ -2941,7 +2941,7 @@ def get_bin_indexes(axis, bin_edges):
     for bin_edge in bin_edges:
         ### Increment until the current edge is equal to the requested edge ###
         while axis.GetBinLowEdge(current_index) < bin_edge:
-            if current_index >= axis.GetNbins(): # Failsafe
+            if current_index > axis.GetNbins(): # Failsafe
                 raise RuntimeError(f'get_bin_indexes() Unable to find fid bin edge {bin_edge}')
             current_index += 1
 
