@@ -2461,6 +2461,7 @@ class colors:
     # https://stackoverflow.com/questions/13905741/accessing-class-variables-from-a-list-comprehension-in-the-class-definition
     pastel_l = (lambda x=_pastel_base, y=_pastel: [x + i for i in range(len(y))])()
     tableu_l = (lambda x=_tableu_base, y=_tableu: [x + i for i in range(len(y))])()
+    tableu_40_l = (lambda x=_tableu_40_base, y=_tableu_40: [x + i for i in range(len(y))])()
 
     blue   = _tableu_base
     orange = _tableu_base + 1
@@ -2554,6 +2555,7 @@ def plot_colors():
     # Colors to plot
     cols = [
         colors.tableu_l,
+        colors.tableu_40_l,
         colors.pastel_l,
         [colors.penn_green, colors.penn_purple],
     ]
