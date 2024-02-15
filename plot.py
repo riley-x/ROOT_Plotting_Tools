@@ -1885,7 +1885,7 @@ def _copy_ratio_args(plotter, args, postfix):
     return out
 
 
-def plot_ratio(hists1, hists2, outlier_arrows=True, hline=None, hline2=None, callback=None, save_plot=True, **kwargs):
+def plot_ratio(objs1, objs2, outlier_arrows=True, hline=None, hline2=None, callback=None, save_plot=True, **kwargs):
     '''
     Plots [hists1] in a main pad on top and [hists2] in a secondary pad below. The two 
     sets of objects should share the same x axis. Set options in the secondary pad by 
@@ -1916,11 +1916,11 @@ def plot_ratio(hists1, hists2, outlier_arrows=True, hline=None, hline2=None, cal
     pads = RatioPads(**kwargs)
 
     ### Draw main histo, get error histos
-    plotter1 = pads.make_plotter1(objs=hists1, **kwargs)
+    plotter1 = pads.make_plotter1(objs=objs1, **kwargs)
 
     ### Draw ratio plot ###
     args2 = _copy_ratio_args(plotter1, kwargs, '2')
-    plotter2 = pads.make_plotter2(objs=hists2, **args2)
+    plotter2 = pads.make_plotter2(objs=objs2, **args2)
 
     ### Draw y=1 line ###
     if hline is not None:
@@ -1936,12 +1936,12 @@ def plot_ratio(hists1, hists2, outlier_arrows=True, hline=None, hline2=None, cal
     if callback:
         callback(plotter1, plotter2)
     if save_plot:
-        save_canvas(pads.c, kwargs.get('filename', hists1[0].GetName()))
+        save_canvas(pads.c, kwargs.get('filename', objs1[0].GetName()))
     
     return pads.c, plotter1, plotter2
 
 
-def plot_ratio3(hists1, hists2, hists3, height1=0.55, canvas_size=(1000, 800), outlier_arrows=True, hline2=None, hline3=None, callback=None, save_plot=True, **kwargs):
+def plot_ratio3(objs1, objs2, objs3, height1=0.55, canvas_size=(1000, 800), outlier_arrows=True, hline2=None, hline3=None, callback=None, save_plot=True, **kwargs):
     '''
     A ratio plot with two ancillary pads. Plots [hists1] in a main pad on top and 
     [hists2] and [hists3] in the middle and bottom ancillary pads respectively. The 
@@ -1981,7 +1981,7 @@ def plot_ratio3(hists1, hists2, hists3, height1=0.55, canvas_size=(1000, 800), o
     ### Draw main histo ###
     kwargs.setdefault('text_offset_bottom', 0.07)
     kwargs.setdefault('remove_x_labels', True) 
-    plotter1 = _plot(pad1, hists1, **kwargs)
+    plotter1 = _plot(pad1, objs1, **kwargs)
 
     ### Draw first ratio plot ###
     args2 = { 
@@ -1991,7 +1991,7 @@ def plot_ratio3(hists1, hists2, hists3, height1=0.55, canvas_size=(1000, 800), o
         'legend': None, 
     }
     args2.update(_copy_ratio_args(plotter1, kwargs, '2'))
-    plotter2 = _plot(pad2, hists2, **args2)
+    plotter2 = _plot(pad2, objs2, **args2)
 
     ### Draw second ratio plot
     args3 = { 
@@ -2001,7 +2001,7 @@ def plot_ratio3(hists1, hists2, hists3, height1=0.55, canvas_size=(1000, 800), o
         'legend': None, 
     }
     args3.update(_copy_ratio_args(plotter1, kwargs, '3'))
-    plotter3 = _plot(pad3, hists3, **args3)
+    plotter3 = _plot(pad3, objs3, **args3)
 
     ### Draw hlines ###
     if hline2 is not None:
@@ -2024,12 +2024,12 @@ def plot_ratio3(hists1, hists2, hists3, height1=0.55, canvas_size=(1000, 800), o
     if callback:
         callback(plotter1, plotter2, plotter3)
     if save_plot:
-        save_canvas(c, kwargs.get('filename', hists1[0].GetName()))
+        save_canvas(c, kwargs.get('filename', objs1[0].GetName()))
 
     return c, plotter1, plotter2, plotter3
 
 
-def plot_two_scale(hists1, hists2, canvas=None, **kwargs):
+def plot_two_scale(objs1, objs2, canvas=None, **kwargs):
     '''
     Plots a graph with two y-axes sharing the same x-axis
 
@@ -2046,7 +2046,7 @@ def plot_two_scale(hists1, hists2, canvas=None, **kwargs):
 
     ### Plot the left histograms
     c.SetFillColor(colors.transparent_white)
-    cache = _plot(c, hists1, **kwargs)
+    cache = _plot(c, objs1, **kwargs)
     c.Update() # So that GetUymin works below
 
     ### Get args2
@@ -2055,15 +2055,15 @@ def plot_two_scale(hists1, hists2, canvas=None, **kwargs):
     ### Fix opts to plot 'SAME'
     opts2 = args2.pop('opts', '')
     if isinstance(opts2, str):
-        opts2 = [opts2] * len(hists2)
+        opts2 = [opts2] * len(objs2)
     opts2[0] = 'SAME ' + opts2[0]
 
     ### Scale histograms to new yrange
-    yrange2 = _auto_yrange(hists2, **args2)
+    yrange2 = _auto_yrange(objs2, **args2)
     args2['yrange'] = yrange2
     scale = (c.GetUymax() - c.GetUymin()) / (yrange2[1] - yrange2[0])
-    hists2 = [h.Clone() for h in hists2]
-    for h in hists2:
+    objs2 = [h.Clone() for h in objs2]
+    for h in objs2:
         if 'TH' in h.ClassName():
             for i in range(h.GetNbinsX()):
                 h.SetPointY(i, c.GetUymin() + (h.GetBinContent(i) - yrange2[0]) * scale)
@@ -2072,26 +2072,26 @@ def plot_two_scale(hists1, hists2, canvas=None, **kwargs):
                 h.SetPointY(i, c.GetUymin() + (h.GetPointY(i) - yrange2[0]) * scale)
 
     ### Plot the right histograms
-    cache.append(_plot(c, hists2, opts=opts2, do_legend=False, **args2))
+    cache.append(_plot(c, objs2, opts=opts2, do_legend=False, **args2))
 
     ### Draw the second axis
     xmax = c.GetUxmax()
     if kwargs.get('logx'):
         xmax = (np.power(10, xmax))
     axis = ROOT.TGaxis(xmax, c.GetUymin(), xmax, c.GetUymax(), yrange2[0], yrange2[1], 510, '+L')
-    axis.SetLabelFont(hists1[0].GetXaxis().GetLabelFont()) # 42
-    axis.SetLabelSize(hists1[0].GetXaxis().GetLabelSize()) # 0.5
+    axis.SetLabelFont(objs1[0].GetXaxis().GetLabelFont()) # 42
+    axis.SetLabelSize(objs1[0].GetXaxis().GetLabelSize()) # 0.5
     axis.SetLabelColor(colors.red)
     axis.SetTitle(kwargs.get('ytitle2', ''))
-    axis.SetTitleFont(hists1[0].GetXaxis().GetLabelFont()) # 42
-    axis.SetTitleSize(hists1[0].GetXaxis().GetLabelSize()) # 0.5
+    axis.SetTitleFont(objs1[0].GetXaxis().GetLabelFont()) # 42
+    axis.SetTitleSize(objs1[0].GetXaxis().GetLabelSize()) # 0.5
     axis.SetTitleColor(colors.red)
     axis.SetLineColor(colors.red)
     axis.Draw()
     cache.append(axis)
 
     if not canvas:
-        save_canvas(c, kwargs.get('filename', hists1[0].GetName()))
+        save_canvas(c, kwargs.get('filename', objs1[0].GetName()))
     return cache
 
 
