@@ -243,6 +243,9 @@ HISTOGRAM MANIPULATION
 normalize
     Normalizes a histogram in multiple ways, such as forcing it to have unit area, or 
     convert it into a cumulative distribution.
+rebin
+    An easier histogram rebinning function that can handle various modes, like variable 
+    bins or finding a user-width binning.
 rebin2d
     Rebins a 2D histogram with variable bins on each axis.
 integral_user
@@ -2772,6 +2775,67 @@ def reduced_legend_hists(shape, opts=None):
 ###                          HISTOGRAM UTILITIES                           ###
 ##############################################################################
 
+def rebin(h, val=None):
+    '''
+    Rebins a histogram [h] with a variety of modes based on [va].
+
+    @param val
+        - If a list, will return a new histogram with the supplied bins.
+        - If a positive number, will modify [h] such that each bin has width [val], 
+          assuming that [h] has equal width bins.
+        - If a negative number, will merge |val| bins together
+    '''
+    if val is None:
+        return h
+    elif isinstance(val, float) or isinstance(val, int):
+        if val < 0:
+            nbins = -val
+        else:
+            nbins = int(round(val / h.GetBinWidth(1)))
+        if nbins > 1:
+            return h.Rebin(nbins)
+        else:
+            return h
+    else:
+        if isinstance(val, list):
+            val = np.array(val, dtype=float)
+        return h.Rebin(len(val) - 1, h.GetName() + '_rebin', val)
+    
+
+def rebin2d(h, bins_x, bins_y, name = '_rebin2d'):
+    '''
+    Rebins a histogram with variable bin sizes, because somehow ROOT hasn't implemented 
+    this. The bins must align!
+
+    @param bins_x,bins_y
+        These should be the N+1 bin edges that define the N bins. The bin edges MUST
+        align with the bin edges of [h].
+    @param name
+        Name postfix to the newly created histogram. Must make sure Root names do not
+        collide.
+    '''
+    h_new = ROOT.TH2F(h.GetName() + name, h.GetTitle(), len(bins_x) - 1, np.array(bins_x, dtype=float), len(bins_y) - 1, np.array(bins_y, dtype=float))
+
+    ### Get the bin indices into `h` that align with the requested bins. These always point to the
+    ### lower edge of the bin.
+    bin_indexes_x = [0] + get_bin_indexes(h.GetXaxis(), bins_x) + [h.GetNbinsX() + 2] # add the underflow and overflow bins
+    bin_indexes_y = [0] + get_bin_indexes(h.GetYaxis(), bins_y) + [h.GetNbinsY() + 2] # add the underflow and overflow bins
+
+    ### Populate the new histogram ###
+    for y_new in range(len(bin_indexes_y) - 1):     # index into the bin_indexes lists
+        for x_new in range(len(bin_indexes_x) - 1): # since we include the underflow bin above, this also indexes into h_new
+            v = 0
+            e = 0
+            for y_old in range(bin_indexes_y[y_new], bin_indexes_y[y_new + 1]): # ROOT bin index into h
+                for x_old in range(bin_indexes_x[x_new], bin_indexes_x[x_new + 1]):
+                    v += h.GetBinContent(x_old, y_old)
+                    e += h.GetBinError(x_old, y_old)**2
+            h_new.SetBinContent(x_new, y_new, v)
+            h_new.SetBinError(x_new, y_new, e**0.5)
+
+    return h_new
+
+
 def integral_user(h, user_range=None, use_width=False, return_error=False):
     '''
     Calculates the integral of [h] using a user-coordinate range instead of a bin range.
@@ -2955,39 +3019,6 @@ def get_bin_indexes(axis, bin_edges):
 
     return indexes
 
-
-def rebin2d(h, bins_x, bins_y, name = '_rebin2d'):
-    '''
-    Rebins a histogram with variable bin sizes, because somehow ROOT hasn't implemented 
-    this. The bins must align!
-
-    @param bins_x,bins_y
-        These should be the N+1 bin edges that define the N bins. The bin edges MUST
-        align with the bin edges of [h].
-    @param name
-        Name postfix to the newly created histogram. Must make sure Root names do not
-        collide.
-    '''
-    h_new = ROOT.TH2F(h.GetName() + name, h.GetTitle(), len(bins_x) - 1, np.array(bins_x, dtype=float), len(bins_y) - 1, np.array(bins_y, dtype=float))
-
-    ### Get the bin indices into `h` that align with the requested bins. These always point to the
-    ### lower edge of the bin.
-    bin_indexes_x = [0] + get_bin_indexes(h.GetXaxis(), bins_x) + [h.GetNbinsX() + 2] # add the underflow and overflow bins
-    bin_indexes_y = [0] + get_bin_indexes(h.GetYaxis(), bins_y) + [h.GetNbinsY() + 2] # add the underflow and overflow bins
-
-    ### Populate the new histogram ###
-    for y_new in range(len(bin_indexes_y) - 1):     # index into the bin_indexes lists
-        for x_new in range(len(bin_indexes_x) - 1): # since we include the underflow bin above, this also indexes into h_new
-            v = 0
-            e = 0
-            for y_old in range(bin_indexes_y[y_new], bin_indexes_y[y_new + 1]): # ROOT bin index into h
-                for x_old in range(bin_indexes_x[x_new], bin_indexes_x[x_new + 1]):
-                    v += h.GetBinContent(x_old, y_old)
-                    e += h.GetBinError(x_old, y_old)**2
-            h_new.SetBinContent(x_new, y_new, v)
-            h_new.SetBinError(x_new, y_new, e**0.5)
-
-    return h_new
 
 
 def projectX(h, yrange, new_name=None):
