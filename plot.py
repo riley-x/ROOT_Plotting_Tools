@@ -2391,7 +2391,10 @@ def plot_discrete_bins(hists1, hists2=None, hists3=None, plotter=plot, bin_width
 ###                                COLORS                                  ###
 ##############################################################################
 
-class colors():
+def _wb(x):
+    return x + (1 - x) * 0.6
+    
+class colors:
     '''
     Utility wrappers for predefined colors and colormaps. This is a namespace class.
     There's no need to instantiate it. Colors can be accessed directly, for example 
@@ -2424,7 +2427,6 @@ class colors():
             ROOT.TColor(0.9921568627450981, 0.8549019607843137, 0.9254901960784314), # pink
             ROOT.TColor(0.9490196078431372, 0.9490196078431372, 0.9490196078431372), # gray
     ]
-
     _tableu = [ # Matplotlib tableau colormap (len: 10)
             ROOT.TColor( 31/255., 119/255., 180/255.), # blue
             ROOT.TColor(255/255., 127/255.,  14/255.), # orange
@@ -2437,13 +2439,23 @@ class colors():
             ROOT.TColor(188/255., 189/255.,  34/255.), # olive
             ROOT.TColor( 23/255., 190/255., 207/255.), # cyan
     ]
+
+    _tableu_40 = [ # Tableau but with 40% alpha, good for fill plots. 
+        ROOT.TColor(_wb(x.GetRed()), _wb(x.GetGreen()), _wb(x.GetBlue())) for x in _tableu
+        # Setting the alpha parameter in ROOT.TColor absolutely does not work...thanks ROOT
+        # Manually calculate white blended version instead
+    ]
+
     _pastel_base = _pastel[0].GetNumber()
     _tableu_base = _tableu[0].GetNumber()
+    _tableu_40_base = _tableu_40[0].GetNumber()
 
     def pastel(i):
         return colors._pastel_base + i % len(colors._pastel)
     def tableu(i):
         return colors._tableu_base + i % len(colors._tableu)
+    def tableu_40(i):
+        return colors._tableu_40_base + i % len(colors._tableu_40)
 
     # list comprehensions are iffy inside a class scope
     # https://stackoverflow.com/questions/13905741/accessing-class-variables-from-a-list-comprehension-in-the-class-definition
