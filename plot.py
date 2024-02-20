@@ -3245,6 +3245,11 @@ class IterRoot:
 ###                                LOGGING                                 ###
 ##############################################################################
 
+def notice(x):
+    '''Prints a blue message to the terminal.'''
+    print('\033[36m' + x + '\033[0m')
+
+
 def success(x):
     '''Prints a green message to the terminal.'''
     print('\033[92m' + x + '\033[0m')
