@@ -1058,12 +1058,12 @@ class Plotter:
     #####################################################################################
 
     def _set_text_properties(self,
-        text_pos='auto', 
-        title_size=0.05, text_size=0.035, text_spacing=1,     
-        text_back_color=None,
-        text_offset_left=0.05, text_offset_right=0.05, text_offset_top=0.05, text_offset_bottom=0.05,
-        **_,
-    ):
+            text_pos='auto', 
+            title_size=0.05, text_size=0.035, text_spacing=1,     
+            text_back_color=None,
+            text_offset_left=0.05, text_offset_right=0.05, text_offset_top=0.05, text_offset_bottom=0.05,
+            **_,
+        ):
         '''
         All text sizes/positions are in pad units.
 
@@ -1127,19 +1127,19 @@ class Plotter:
             if val is None or y > val:
                 data_locs[x] = y
 
-        for obj in self.objs:
+        for obj,draw_opt in zip(self.objs, self.draw_opts):
             for entry in IterRoot(obj):
-                update_loc(entry.x(), entry.y())
                 if 'TH1' in obj.ClassName() or 'TProfile' in obj.ClassName():
-                    if obj.__rxplot_draw_opt != 'P':
+                    if draw_opt != 'P':
                         # All other plot options use the full width of the bin, so only 'P' is where
                         # we don't check the x_low/x_high
-                        update_loc(entry.x_low(), entry.y())
-                        update_loc(entry.x_high(), entry.y())
+                        update_loc(entry.x_low(), entry.y_high())
+                        update_loc(entry.x_high(), entry.y_high())
+                    else:
+                        update_loc(entry.x(), entry.y_high())
                 else:
-                    update_loc(entry.x_low(), entry.y())
-                    update_loc(entry.x_high(), entry.y())
-                # TODO vertical error bars too?
+                    update_loc(entry.x_low(), entry.y_high())
+                    update_loc(entry.x_high(), entry.y_high())
                    
         data_locs_axes = [] # in axes coordiantes
         for x,y in data_locs.items():
@@ -1170,10 +1170,20 @@ class Plotter:
         ### Get text locations ###
         occlusions = [] # (left, right, bottom) in axes coordinates
         for tex in self.titles:
+            size = get_tlatex_size(tex)
+            v_align = tex.GetTextAlign() % 10
+            
+            ### Get y_bottom based on alignment ###
+            y = tex.GetY() - y_text_data_spacing
+            if v_align == ROOT.kVAlignTop:
+                y -= size[1]
+            elif v_align == ROOT.kVAlignCenter:
+                y -= size[1] / 2
+
             occlusions.append((
                 self.pad_to_axes_x(tex.GetX()),
-                self.pad_to_axes_x(tex.GetX() + tex.GetXsize()),
-                self.pad_to_axes_y(tex.GetY() - y_text_data_spacing), # all text is bottom-aligned
+                self.pad_to_axes_x(tex.GetX() + size[0]),
+                self.pad_to_axes_y(y),
             ))
         if len(self.legends) > 0:
             for legend in self.legends:
@@ -3175,8 +3185,22 @@ class IterRoot:
             return self.obj.GetPointY(i)
         else:
             raise NotImplementedError('IterRoot.y() unknown class ' + self.obj.ClassName())
+    
+    def y_high(self, delta=0):
+        i = self._get_i(delta)
+        if 'TH1' in self.obj.ClassName() or 'TProfile' in self.obj.ClassName():
+            return self.obj.GetBinContent(i + 1) + self.obj.GetBinError(i + 1)
+        elif self.obj.ClassName() == 'TGraph':
+            return self.obj.GetPointY(i)
+        elif self.obj.ClassName() == 'TGraphErrors':
+            return self.obj.GetPointY(i) + self.obj.GetErrorY(i)
+        elif self.obj.ClassName() == 'TGraphAsymmErrors':
+            return self.obj.GetPointY(i) + self.obj.GetErrorYhigh(i)
+        else:
+            raise NotImplementedError('IterRoot.y_high() unknown class ' + self.obj.ClassName())
         
     def e(self, delta=0):
+        '''Average error in case of TGraphAsymmErrors'''
         i = self._get_i(delta)
         if 'TH1' in self.obj.ClassName() or 'TProfile' in self.obj.ClassName():
             return self.obj.GetBinError(i + 1)
