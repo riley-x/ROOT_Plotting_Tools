@@ -1352,10 +1352,11 @@ class Plotter:
         '''
         Draws a horizontal line at [y] through the entire pad's x range. Should be called
         after [draw].
-
-        TODO this will still draw the line out of the axes if y is not in yrange
         '''
         if y is None: return
+        if self.y_range:
+            if y < self.y_range[0] or y > self.y_range[1]:
+                return
         self.pad.cd()
         line = ROOT.TLine(self.x_range[0], y, self.x_range[1], y)
         line.SetLineStyle(style)
