@@ -274,6 +274,8 @@ import itertools
 import math
 import ctypes
 import numpy as np
+import os
+import sys
 
 ROOT.gROOT.SetBatch(ROOT.kTRUE)
 ROOT.gROOT.SetStyle("ATLAS")
@@ -3289,6 +3291,32 @@ def error(x):
     '''Prints a red error message to the terminal.'''
     print('\033[91mERROR ' + x + '\033[0m')
 
+
+class StreamRedirect:
+    # https://stackoverflow.com/questions/24277488/in-python-how-to-capture-the-stdout-from-a-c-shared-library-to-a-variable
+    def __init__(self, target, stream, target_open_mode):
+        self.target = target
+        self.stream_fd = stream.fileno()
+        self.target_open_mode = target_open_mode
+    
+    def __enter__(self):
+        self.stream_dup = os.dup(self.stream_fd)
+        self.target_file = open(self.target, self.target_open_mode)
+        os.dup2(self.target_file.fileno(), self.stream_fd)
+    
+    def __exit__(self, type, value, traceback):
+        os.dup2(self.stream_dup, self.stream_fd)
+        os.close(self.stream_dup)
+        self.target_file.close()
+        
+def redirect(target=os.devnull, stream=sys.stdout, target_open_mode='w'):
+    '''
+    Redirects printouts to [stream] towards [target] instead. Use as
+
+        with redirect('log.txt'):
+            do_stuff()
+    '''
+    return StreamRedirect(target, stream, target_open_mode)
 
 ##############################################################################
 ###                                  MAIN                                  ###
