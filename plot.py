@@ -486,7 +486,7 @@ class Plotter:
         if self.frame.GetZaxis().GetTitle():
             self.pad.SetRightMargin(0.18)
         else:
-            self.pad.SetRightMargin(0.12)
+            self.pad.SetRightMargin(0.15)
 
     def user_to_axes(self, x, y):
         return user_to_axes(self.pad, self.frame, (x, y))
