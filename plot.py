@@ -208,7 +208,9 @@ legend_opts                                             default: context-depende
     the respective entry from the legend.
 legend_columns                                          default: 1
     Number of columns to split the legend across.
-
+legend_vertical_order                                   default: False
+    When [legend_columns] > 1, the entries will go left to right by default. Set this
+    option to true to go top to bottom instead.
     
 OTHER
 -----------------------------------------------------
