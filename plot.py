@@ -2404,9 +2404,18 @@ def plot_discrete_bins(hists1, hists2=None, hists3=None, plotter=plot, bin_width
 ###                                COLORS                                  ###
 ##############################################################################
 
-def _wb(x):
-    return x + (1 - x) * 0.6
-    
+def _wb(x, alpha):
+    return x + (1 - x) * (1 - alpha)
+
+
+def whiteblend(color, alpha):
+    return ROOT.TColor(
+        _wb(color.GetRed(), alpha), 
+        _wb(color.GetGreen(), alpha), 
+        _wb(color.GetBlue(), alpha)
+    )
+
+
 class colors:
     '''
     Utility wrappers for predefined colors and colormaps. This is a namespace class.
@@ -2454,7 +2463,7 @@ class colors:
     ]
 
     _tableu_40 = [ # Tableau but with 40% alpha, good for fill plots. 
-        ROOT.TColor(_wb(x.GetRed()), _wb(x.GetGreen()), _wb(x.GetBlue())) for x in _tableu
+        whiteblend(x, 0.4) for x in _tableu
         # Setting the alpha parameter in ROOT.TColor absolutely does not work...thanks ROOT
         # Manually calculate white blended version instead
     ]
@@ -3047,7 +3056,6 @@ def get_bin_indexes(axis, bin_edges):
     return indexes
 
 
-
 def projectX(h, yrange, new_name=None):
     '''
     Projects a 2d histogram onto its x-axis using user (data) coordinates.
@@ -3308,7 +3316,8 @@ class StreamRedirect:
         os.dup2(self.stream_dup, self.stream_fd)
         os.close(self.stream_dup)
         self.target_file.close()
-        
+
+
 def redirect(target=os.devnull, stream=sys.stdout, target_open_mode='w'):
     '''
     Redirects printouts to [stream] towards [target] instead. Use as
