@@ -460,7 +460,7 @@ class Plotter:
             # Note Z axis settings MUST be applied on the histogram drawn with 'Z' option, don't clone!
             self.frame = self.objs[0]
 
-    def _set_pad_properties(self, logx=None, logy=None, logz=None, left_margin=None, right_margin=None, bottom_margin=None, top_margin=None, **kwargs):
+    def _set_pad_properties(self, logx=None, logy=None, logz=None, left_margin=None, right_margin=None, bottom_margin=None, top_margin=None, **_):
         self.logy = logy
         self.pad.cd()
         if logx is not None: self.pad.SetLogx(logx)
@@ -775,6 +775,13 @@ class Plotter:
         _fix_axis_sizing(self.frame, self.pad, **self.args)
 
         ### Legend and Text ###
+        # These are the actual text locations in pad coordinates. They have to wait until
+        # the pad margins are finalized.
+        self.text_left = self.pad.GetLeftMargin() + self.text_offset_left
+        self.text_right = 1 - self.pad.GetRightMargin() - self.text_offset_right
+        self.text_top = 1 - self.pad.GetTopMargin() - self.text_offset_top
+        self.text_bottom = self.pad.GetBottomMargin() + self.text_offset_bottom
+
         self._make_legend(**self.args)
         self._auto_text_pos_and_pad(**self.args)
         self._place_text_from_textpos(self.text_pos)
@@ -979,7 +986,7 @@ class Plotter:
     def _make_legend(self, legend_columns=1, legend_vertical_order=False, **_):
         '''
         Creates a ROOT.TLegend with entries from [self.legend_items]. Also measures the 
-        legend sizing.
+        legend sizing. Does not place the legend yet.
 
         @sets
             self.legends
@@ -1082,10 +1089,10 @@ class Plotter:
         self.text_size = text_size / pad_height
         self.text_spacing = text_size * text_spacing * 0.15
 
-        self.text_left = self.pad.GetLeftMargin() + text_offset_left
-        self.text_right = 1 - self.pad.GetRightMargin() - text_offset_right
-        self.text_top = 1 - self.pad.GetTopMargin() - text_offset_top
-        self.text_bottom = self.pad.GetBottomMargin() + text_offset_bottom
+        self.text_offset_left = text_offset_left
+        self.text_offset_right = text_offset_right
+        self.text_offset_top = text_offset_top
+        self.text_offset_bottom = text_offset_bottom
 
     def has_text(self):
         return bool(self.title_lines or self.legends)
