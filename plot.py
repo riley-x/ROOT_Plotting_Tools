@@ -363,7 +363,9 @@ class Plotter:
         The frame histogram as mentioned above. Generally this will be a custom created
         TH1F, unless you pass a [_frame] to [__init__]. Also, if plotting a TH2 or one
         of the ranges above is None, will be the first object in [objs] instead.
-    @property legends
+    @property legends : [TLegend]
+        A list of all the legends. Note that this class generates one TLegend per legend 
+        entry to have fine-grained control over the entry placement.
     @property legend_<width/height/rows/columns>
     @property data_y_<min/max/pos> : float or None
         The min/max/min-positive value of the data in [objs].
@@ -1597,17 +1599,17 @@ def _apply_frame_opts(obj, **kwargs):
 ### MISC ###
 
 def _fix_axis_sizing(h, pad, 
-    remove_x_labels=False, 
-    text_size=0.05,
-    title_offset_x=1.0,
-    title_offset_y=1.4,
-    title_offset_z=None,
-    tick_length_x=0.015,
-    tick_length_y=0.03,
-    label_offset_x=0.005, 
-    label_size_x=0.05, 
-    **_
-):
+        remove_x_labels=False, 
+        text_size=0.05,
+        title_offset_x=1.0,
+        title_offset_y=1.4,
+        title_offset_z=None,
+        tick_length_x=0.015,
+        tick_length_y=0.03,
+        label_offset_x=0.005, 
+        label_size_x=0.05, 
+        **_
+    ):
     '''
     Fixes various axes sizing issues when you have multiple pads, since ROOT sizes 
     things based on the pad size not the canvas size.
@@ -2162,7 +2164,16 @@ def _draw_tier_line(h, y, i, linecolor=None, linewidth=None, x_range=None, **kwa
     return cache
 
 
-def plot_tiered(hists, tier_labels=None, tier_title=None, plot_style=None, y_pad_top=0.1, logy=False, **kwargs):
+def plot_tiered(
+        hists, 
+        tier_labels=None, 
+        tier_title=None, 
+        plot_style=None, 
+        y_pad_top=0.1, 
+        logy=False, 
+        callback=None, 
+        **kwargs,
+    ):
     '''
     Similar to a violin plot, this plots each histogram in its own equi-height y-bin.
     Negative values are supressed.
@@ -2172,13 +2183,13 @@ def plot_tiered(hists, tier_labels=None, tier_title=None, plot_style=None, y_pad
         bottom to top. The series histograms in each ybin are normalized to each other.
     @param tier_labels
         The label of each tier, in matching order as `hists.shape[0]`.
+    @param tier_title
+        Horizontal title placed above the tier labels.
     @param plot_style
         How to draw the histograms. This can be
             - "fill": Filled boxes from 0. Default option if #series == 1.
             - "line": Similar to ROOT "hist" mode. Default option if #series > 1.
             - "point": Similar to ROOT "PE" mode. Not implemented yet.
-    @param tier_title
-        Horizontal title placed above the tier labels.
     '''
     hists_flat = [x for y in hists for x in y]
     n_hists = len(hists_flat)
@@ -2187,7 +2198,6 @@ def plot_tiered(hists, tier_labels=None, tier_title=None, plot_style=None, y_pad
 
     ### Handle some opts that are usually done in _plot ###
     yrange = kwargs.pop('y_range', None)
-    kwargs.setdefault('text_pos', 'bottomright')
     kwargs.setdefault('legend_opts', 'L')
     if tier_labels is not None: 
         kwargs.setdefault('left_margin', 0.2)
@@ -2195,6 +2205,8 @@ def plot_tiered(hists, tier_labels=None, tier_title=None, plot_style=None, y_pad
     if legend := kwargs.get('legend'):
         if isinstance(legend[0], str):
             kwargs['legend'] = list(legend) + [''] * (n_hists - len(legend))
+    else:
+        kwargs['legend'] = None
 
     ### Create the frame ###
     axis = hists[0][0].GetXaxis()
@@ -2245,11 +2257,11 @@ def plot_tiered(hists, tier_labels=None, tier_title=None, plot_style=None, y_pad
 
     ### Draw hlines ###
     for y in range(1, n_tiers):
-        plotter.draw_hline(y)
+        plotter.draw_hline(y, width=1)
 
     ### Draw text and y-bin title ###
     for tex in plotter.titles: tex.Draw()
-    if plotter.legend: plotter.legend.Draw()
+    for l in plotter.legends: l.Draw()
     if tier_title:
         c.SetTopMargin(0.06)
         tex = ROOT.TLatex(0, 0.95, tier_title)
@@ -2259,6 +2271,10 @@ def plot_tiered(hists, tier_labels=None, tier_title=None, plot_style=None, y_pad
         width = tex.GetXsize()
         tex.SetX(max(0.05, c.GetLeftMargin() - width))
         tex.Draw()
+
+    ### Callback ###
+    if callback:
+        callback(plotter)
 
     save_canvas(c, kwargs.get('filename', hists[0][0].GetName()))
 
