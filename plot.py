@@ -271,7 +271,7 @@ format
     Automatically formats a list of TObjects. 
 
 '''
-import ROOT
+import ROOT # type: ignore
 import itertools
 import math
 import ctypes
