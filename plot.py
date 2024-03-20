@@ -2169,7 +2169,8 @@ def plot_tiered(
         tier_labels=None, 
         tier_title=None, 
         plot_style=None, 
-        y_pad_top=0.1, 
+        tier_spacing=0.1, 
+        y_pad_top=0,
         logy=False, 
         callback=None, 
         **kwargs,
@@ -2190,10 +2191,16 @@ def plot_tiered(
             - "fill": Filled boxes from 0. Default option if #series == 1.
             - "line": Similar to ROOT "hist" mode. Default option if #series > 1.
             - "point": Similar to ROOT "PE" mode. Not implemented yet.
+    @param tier_spacing
+        Empty space between each tier's plot elements, as a fraction of the total tier height.
+    @param y_pad_top
+        Empty space added to the top of the canvas, i.e. for text elements, as fraction of
+        axes height.
     '''
     hists_flat = [x for y in hists for x in y]
     n_hists = len(hists_flat)
     n_tiers = len(hists)
+    n_fake_tiers_total = round(n_tiers / (1 - y_pad_top))
     c = ROOT.TCanvas('c1', 'c1', 1000, 800)
 
     ### Handle some opts that are usually done in _plot ###
@@ -2211,9 +2218,9 @@ def plot_tiered(
     ### Create the frame ###
     axis = hists[0][0].GetXaxis()
     if axis.IsVariableBinSize():
-        h_frame = ROOT.TH2F('tiers', '', axis.GetNbins(), axis.GetXbins().GetArray(), n_tiers, 0, n_tiers)
+        h_frame = ROOT.TH2F('tiers', '', axis.GetNbins(), axis.GetXbins().GetArray(), n_fake_tiers_total, 0, n_fake_tiers_total)
     else:
-        h_frame = ROOT.TH2F('tiers', '', axis.GetNbins(), axis.GetXmin(), axis.GetXmax(), n_tiers, 0, n_tiers)
+        h_frame = ROOT.TH2F('tiers', '', axis.GetNbins(), axis.GetXmin(), axis.GetXmax(), n_fake_tiers_total, 0, n_fake_tiers_total)
     h_frame.SetDirectory(0)
     h_frame.Draw('AXIS')
 
@@ -2226,7 +2233,7 @@ def plot_tiered(
     plotter = Plotter(
         pad=c,
         objs=hists_flat,
-        y_range=(0, n_tiers),
+        y_range=(0, n_fake_tiers_total),
         _do_draw=False,
         _frame=h_frame,
         **kwargs,
@@ -2249,7 +2256,7 @@ def plot_tiered(
             series = [log_hist(h, min_val=min_pos) for h in series]
 
         for i,h in enumerate(series):
-            h.Scale((1 - y_pad_top) / max_val)
+            h.Scale((1 - tier_spacing) / max_val)
             if plot_style == 'fill' or plot_style is None and len(series) == 1:
                 cache.append(_draw_tier_fill(h, y, i, **kwargs))
             elif plot_style == 'line' or plot_style is None and len(series) > 1:
@@ -2271,6 +2278,7 @@ def plot_tiered(
         width = tex.GetXsize()
         tex.SetX(max(0.05, c.GetLeftMargin() - width))
         tex.Draw()
+    c.RedrawAxis()
 
     ### Callback ###
     if callback:
