@@ -511,6 +511,11 @@ class Plotter:
         return pad_to_axes_height(self.pad, self.frame, height)
     def pad_to_axes(self, x, y):
         return pad_to_axes(self.pad, self.frame, (x, y))
+    
+    def axes_to_pad_x(self, x):
+        return axes_to_pad_x(self.pad, self.frame, x)
+    def axes_to_pad_y(self, y):
+        return axes_to_pad_y(self.pad, self.frame, y)
  
     def reset_pad(self, pad):
         self.compiled = False
@@ -590,13 +595,13 @@ class Plotter:
         if self.frame:
             self.frame.GetYaxis().SetRangeUser(*self.y_range)
 
-    def _auto_y_range(self, y_range='auto', ignore_outliers_y=0, **_):
+    def _auto_y_range(self, y_range='auto', y_min=None, y_max=None, ignore_outliers_y=0, **_):
         '''
         This function 
             - parses [y_range] to determine the auto behavior
-            - returns the (min, max) of the data, or (pos, max) if logy
-            - sets the following members
-        It does not do any padding, etc.
+            - sets the members listed below
+            - returns (min, max) to be used as the base y range. It does not do any
+              padding, but does respect [y_min] and [y_max].
 
         @sets
             self.data_y_[min/max/pos]
@@ -622,20 +627,29 @@ class Plotter:
             return y_range
 
         ### Get data min/max ###
-        out_min, out_pos, out_max = get_minmax_y(self.objs, x_range=self.x_range, ignore_outliers_y=ignore_outliers_y)
-        if out_min is None or out_max is None or (out_pos is None and self.pad.GetLogy()): 
+        self.data_y_min, self.data_y_pos, self.data_y_max = get_minmax_y(self.objs, x_range=self.x_range, ignore_outliers_y=ignore_outliers_y)
+        if self.data_y_min is None or self.data_y_max is None or (self.data_y_pos is None and self.pad.GetLogy()): 
             self.auto_y_bot = False
             self.auto_y_top = False
             return None
-        self.data_y_min = out_min
-        self.data_y_max = out_max
-        self.data_y_pos = out_pos
         
-        ### Set output ###
+        ### Output ###
         # No padding here! See _pad_y_range
-        if self.pad.GetLogy(): out_min = out_pos
-        if not self.auto_y_bot: out_min = y_range[0]
-        if not self.auto_y_top: out_max = y_range[1]
+        out_min = self.data_y_pos if self.pad.GetLogy() else self.data_y_min
+        out_max = self.data_y_max
+
+        if not self.auto_y_bot: 
+            out_min = y_range[0]
+        elif y_min is not None and out_min < y_min:
+            out_min = y_min
+            self.auto_y_bot = False
+
+        if not self.auto_y_top: 
+            out_max = y_range[1]
+        elif y_max is not None and out_max > y_max:
+            out_max = y_max
+            self.auto_y_top = False
+
         return out_min, out_max
         
     def _auto_z_range(self, z_range=None, **kwargs):
@@ -1190,7 +1204,7 @@ class Plotter:
         data. Text should be placed first.
         '''
         ### Get text locations ###
-        occlusions = [] # (left, right, bottom) in axes coordinates
+        occlusions = [] # (left, right, bottom, tex) in axes coordinates
         for tex in self.titles:
             size = get_tlatex_size(tex)
             v_align = tex.GetTextAlign() % 10
@@ -1212,7 +1226,7 @@ class Plotter:
                 occlusions.append((
                     self.pad_to_axes_x(legend.GetX1()),
                     self.pad_to_axes_x(legend.GetX2()),
-                    self.pad_to_axes_y(legend.GetY1()  - y_text_data_spacing), 
+                    self.pad_to_axes_y(legend.GetY1() - y_text_data_spacing), 
                 ))
 
         ### Iterate over data points ###
@@ -1224,6 +1238,8 @@ class Plotter:
                     # y' = y (1 - pad_top - pad_bot) + pad_bot
                     # Set y' == bottom and solve for pad_top
                     pad_req = 1 - pad_bot - (bottom - pad_bot) / r.y_max
+                    # if pad_req > max_pad:
+                    #     print(f'{left:.2g} {right:.2g} {bottom:.2g} === {r}')
                     max_pad = max(max_pad, pad_req)
         return max_pad
 
