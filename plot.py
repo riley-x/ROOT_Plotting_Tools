@@ -271,6 +271,8 @@ format
     Automatically formats a list of TObjects. 
 
 '''
+from __future__ import annotations
+
 import ROOT # type: ignore
 import itertools
 import math
@@ -278,6 +280,7 @@ import ctypes
 import numpy as np
 import os
 import sys
+import bisect
 
 ROOT.gROOT.SetBatch(ROOT.kTRUE)
 ROOT.gROOT.SetStyle("ATLAS")
@@ -533,8 +536,9 @@ class Plotter:
 
     def _pad_y_range(self, y_min=None, y_max=None, **kwargs):
         '''
-        Updates [self.y_range] with extra padding, if using auto axis limits. Also resets
-        the limits on [self.frame].
+        If using auto axis limits, updates [self.y_range] with extra padding defined by
+        [self._y_pad_bot/top]. Respects the threholds [y_min] and [y_max] which take
+        priority. Also resets the limits on [self.frame].
         '''
         if self.is_2d: return None
         if not self.auto_y_bot and not self.auto_y_top: return 
@@ -582,7 +586,18 @@ class Plotter:
         if self.frame:
             self.frame.GetYaxis().SetRangeUser(*self.y_range)
 
-    def _auto_y_range(self, y_range='auto', ignore_outliers_y=0, **kwargs):
+    def _auto_y_range(self, y_range='auto', ignore_outliers_y=0, **_):
+        '''
+        This function 
+            - parses [y_range] to determine the auto behavior
+            - returns the (min, max) of the data, or (pos, max) if logy
+            - sets the following members
+        It does not do any padding, etc.
+
+        @sets
+            self.data_y_[min/max/pos]
+            self.auto_y_[bot/top]
+        '''
         self.data_y_min = None
         self.data_y_max = None
         self.data_y_pos = None
@@ -1157,6 +1172,8 @@ class Plotter:
         data_locs_axes = [] # in axes coordiantes
         for x,y in data_locs.items():
             data_locs_axes.append(self.user_to_axes(x, y))
+        print(data_locs)
+        print(data_locs_axes)
 
         ### Test ###
         min_pad = None
@@ -1205,6 +1222,7 @@ class Plotter:
                     self.pad_to_axes_x(legend.GetX2()),
                     self.pad_to_axes_y(legend.GetY1()  - y_text_data_spacing), 
                 ))
+        print(occlusions[-1])
 
         ### Iterate over data points ###
         max_pad = 0
@@ -1709,6 +1727,105 @@ def _make_stack(objs):
                 obj.Add(new_objs[-1])
             new_objs.append(obj)
         return new_objs
+
+
+### OCCLUSION ###
+
+class Occlusion:
+    '''
+    This class represents a list of occlusions on a y-axis given an x-axis. For every x
+    value in a range, it stores a min and max y value.
+
+    The underlying representation includes two lists, one for ranges and one for points.
+    The ranges array consists of non-overlapping ranges sorted by x-value.
+    '''
+    class Range:
+        def __init__(self, x_min, x_max, y_min, y_max) -> None:
+            self.x_min = x_min
+            self.x_max = x_max
+            self.y_min = y_min
+            self.y_max = y_max
+        
+        def __lt__(self, other):
+            if isinstance(other, Occlusion.Range):
+                return self.x_min < other.x_min
+            else:
+                return self.x_min < other
+            
+        def __str__(self) -> str:
+            return f'[{self.x_min},{self.x_max}] -> [{self.y_min},{self.y_max}]'
+            
+        def split(self, other : Occlusion.Range):
+            '''
+            Splits [self] based on the addition of [other]. Note, does not split
+            the remainder of [other] if [other] is wider.
+            '''
+            y_min = min(self.y_min, other.y_min)
+            y_max = max(self.y_max, other.y_max)
+            ### Split not necessary ###
+            if other.y_min >= self.y_min and other.y_max <= self.y_max:
+                return [self]
+            ### Other does not overlap ###
+            elif other.x_min >= self.x_max or other.x_max <= self.x_min:
+                return [self]
+            ### Other is internal ###
+            elif other.x_min > self.x_min and other.x_max < self.x_max:
+                return [
+                    Occlusion.Range(self.x_min, other.x_min, self.y_min, self.y_max),
+                    Occlusion.Range(other.x_min, other.x_max, y_min, y_max),
+                    Occlusion.Range(other.x_max, self.x_max, self.y_min, self.y_max),
+                ]
+            ### Other is external ###
+            elif other.x_min <= self.x_min and other.x_max >= self.x_max:
+                return [Occlusion.Range(self.x_min, self.x_max, y_min, y_max)]
+            ### Overlap other.right edge (includes other.left == self.left) ###
+            elif other.x_max < self.x_max:
+                return [
+                    Occlusion.Range(self.x_min, other.x_max, y_min, y_max),
+                    Occlusion.Range(other.x_max, self.x_max, self.y_min, self.y_max),
+                ]
+            ### Overlap other.left edge (includes other.right == self.right) ###
+            elif other.x_min > self.x_min:
+                return [
+                    Occlusion.Range(self.x_min, other.x_min, self.y_min, self.y_max),
+                    Occlusion.Range(other.x_min, self.x_max, y_min, y_max),
+                ]
+            else:
+                raise RuntimeError('Occlusion.Range.split() How did we get here?')
+
+
+    def __init__(self) -> None:
+        self.ranges : list[Occlusion.Range] = [] 
+        self.points = [] 
+
+    def _find(self, r : Occlusion.Range):
+        '''
+        @returns i_min, i_max
+            [i_min, i_max) is the range of indices into self.ranges that intersects with [r].
+        '''
+        if len(self.range) == 0:
+            return (0, 0)
+        i_min = bisect.bisect_left(self.ranges, r.x_min)
+        if i_min > 0 and self.ranges[i_min - 1].x_max > r.x_min:
+            i_min -= 1
+        i_max = bisect.bisect_left(self.ranges, r.x_max)
+        return i_min, i_max
+
+    def add(self, x_min, x_max, y_min, y_max):
+        r = Occlusion.Range(x_min, x_max, y_min, y_max)
+        i_min, i_max = self._find(r)
+        if i_min == len(self.ranges):
+            self.ranges.append(r)
+        elif i_max == 0:
+            self.ranges.insert(0, r)
+        else:
+            new_slice = []
+            for i in range(i_min, i_max):
+                new_slice.extend(self.ranges[i].split(r))
+            self.ranges[i_min:i_max] = new_slice
+        print(self.ranges)
+
+
 
 
 ##############################################################################
