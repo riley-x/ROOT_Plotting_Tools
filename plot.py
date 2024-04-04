@@ -493,6 +493,10 @@ class Plotter:
         else:
             self.pad.SetRightMargin(0.15)
 
+    def user_to_axes_x(self, x):
+        return user_to_axes_x(self.pad, self.frame, x)
+    def user_to_axes_y(self, y):
+        return user_to_axes_y(self.pad, self.frame, y)
     def user_to_axes(self, x, y):
         return user_to_axes(self.pad, self.frame, (x, y))
 
@@ -1149,38 +1153,26 @@ class Plotter:
         if len(test_pos) == 1 and not self.auto_y_top: return
         
         ### Parse data ###
-        data_locs = {} # dictionary mapping x values to maximum y values, in user coordiantes
-        def update_loc(x, y):
-            val = data_locs.get(x)
-            if val is None or y > val:
-                data_locs[x] = y
-
+        occlusions = Occlusion() # in user coordiantes
         for obj,draw_opt in zip(self.objs, self.draw_opts):
             for entry in IterRoot(obj):
-                if 'TH1' in obj.ClassName() or 'TProfile' in obj.ClassName():
-                    if draw_opt != 'P':
-                        # All other plot options use the full width of the bin, so only 'P' is where
-                        # we don't check the x_low/x_high
-                        update_loc(entry.x_low(), entry.y_high())
-                        update_loc(entry.x_high(), entry.y_high())
-                    else:
-                        update_loc(entry.x(), entry.y_high())
-                else:
-                    update_loc(entry.x_low(), entry.y_high())
-                    update_loc(entry.x_high(), entry.y_high())
-                   
-        data_locs_axes = [] # in axes coordiantes
-        for x,y in data_locs.items():
-            data_locs_axes.append(self.user_to_axes(x, y))
-        print(data_locs)
-        print(data_locs_axes)
+                x_low = self.user_to_axes_x(entry.x_low())
+                x_high = self.user_to_axes_x(entry.x_high())
+                y_low = self.user_to_axes_y(entry.y_low())
+                y_high = self.user_to_axes_y(entry.y_high())
+                occlusions.add(x_low, x_high, y_low, y_high)
+                # if draw_opt != 'P' and ('TH1' in obj.ClassName() or 'TProfile' in obj.ClassName()):
+                #     # All other plot options use the full width of the bin, so only 'P' is where
+                #     # we don't check the x_low/x_high
+                #     update_loc(entry.x_low(), entry.y_high())
+                #     update_loc(entry.x_high(), entry.y_high())
 
         ### Test ###
         min_pad = None
         min_pad_pos = 'top'
         for text_pos in test_pos:
             self._place_text_from_textpos(text_pos)
-            req_pad = self._get_required_top_padding(data_locs_axes)
+            req_pad = self._get_required_top_padding(occlusions)
             if min_pad is None or req_pad < min_pad:
                 min_pad = req_pad
                 min_pad_pos = text_pos
@@ -1190,7 +1182,7 @@ class Plotter:
         self.text_pos = min_pad_pos
         self._y_pad_top = max(self._y_min_pad_top, min_pad)
                 
-    def _get_required_top_padding(self, data_locs_axes, y_text_data_spacing=0.02):
+    def _get_required_top_padding(self, data_occs : Occlusion, y_text_data_spacing=0.02):
         '''
         Helper function for [_auto_text_pos_and_pad].
 
@@ -1222,17 +1214,16 @@ class Plotter:
                     self.pad_to_axes_x(legend.GetX2()),
                     self.pad_to_axes_y(legend.GetY1()  - y_text_data_spacing), 
                 ))
-        print(occlusions[-1])
 
         ### Iterate over data points ###
         max_pad = 0
         pad_bot = self._y_pad_bot if self.auto_y_bot else 0
-        for x, y in data_locs_axes:
+        for r in data_occs.ranges:
             for left,right,bottom in occlusions:
-                if x > left and x < right and y > bottom:
+                if r.overlaps_x(left, right) and r.y_max > bottom:
                     # y' = y (1 - pad_top - pad_bot) + pad_bot
                     # Set y' == bottom and solve for pad_top
-                    pad_req = 1 - pad_bot - (bottom - pad_bot) / y
+                    pad_req = 1 - pad_bot - (bottom - pad_bot) / r.y_max
                     max_pad = max(max_pad, pad_req)
         return max_pad
 
@@ -1753,7 +1744,10 @@ class Occlusion:
                 return self.x_min < other
             
         def __str__(self) -> str:
-            return f'[{self.x_min},{self.x_max}] -> [{self.y_min},{self.y_max}]'
+            return f'[{self.x_min:.2g},{self.x_max:.2g}] -> [{self.y_min:.2g},{self.y_max:.2g}]'
+        
+        def __repr__(self) -> str:
+            return str(self)
             
         def split(self, other : Occlusion.Range):
             '''
@@ -1793,6 +1787,8 @@ class Occlusion:
             else:
                 raise RuntimeError('Occlusion.Range.split() How did we get here?')
 
+        def overlaps_x(self, x_min, x_max):
+            return (x_min >= self.x_min and x_min < self.x_max) or (x_max > self.x_min and x_max <= self.x_max)
 
     def __init__(self) -> None:
         self.ranges : list[Occlusion.Range] = [] 
@@ -1803,7 +1799,7 @@ class Occlusion:
         @returns i_min, i_max
             [i_min, i_max) is the range of indices into self.ranges that intersects with [r].
         '''
-        if len(self.range) == 0:
+        if len(self.ranges) == 0:
             return (0, 0)
         i_min = bisect.bisect_left(self.ranges, r.x_min)
         if i_min > 0 and self.ranges[i_min - 1].x_max > r.x_min:
@@ -1823,7 +1819,6 @@ class Occlusion:
             for i in range(i_min, i_max):
                 new_slice.extend(self.ranges[i].split(r))
             self.ranges[i_min:i_max] = new_slice
-        print(self.ranges)
 
 
 
@@ -3347,6 +3342,19 @@ class IterRoot:
         else:
             raise NotImplementedError('IterRoot.y() unknown class ' + self.obj.ClassName())
     
+    def y_low(self, delta=0):
+        i = self._get_i(delta)
+        if 'TH1' in self.obj.ClassName() or 'TProfile' in self.obj.ClassName():
+            return self.obj.GetBinContent(i + 1) - self.obj.GetBinError(i + 1)
+        elif self.obj.ClassName() == 'TGraph':
+            return self.obj.GetPointY(i)
+        elif self.obj.ClassName() == 'TGraphErrors':
+            return self.obj.GetPointY(i) - self.obj.GetErrorY(i)
+        elif self.obj.ClassName() == 'TGraphAsymmErrors':
+            return self.obj.GetPointY(i) - self.obj.GetErrorYlow(i)
+        else:
+            raise NotImplementedError('IterRoot.y_low() unknown class ' + self.obj.ClassName())
+
     def y_high(self, delta=0):
         i = self._get_i(delta)
         if 'TH1' in self.obj.ClassName() or 'TProfile' in self.obj.ClassName():
