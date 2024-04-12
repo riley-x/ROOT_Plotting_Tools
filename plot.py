@@ -392,11 +392,11 @@ class Plotter:
     '''
 
     def __init__(self, pad,
-        objs=None,  
-        y_pad=None, y_pad_bot=0.05, y_pad_top=0.05, 
-        _do_draw=True, _frame=None,
-        **kwargs
-    ):
+            objs=None,  
+            y_pad=None, y_pad_bot=0.05, y_pad_top=0.05, 
+            _do_draw=True, _frame=None,
+            **kwargs
+        ):
         '''
         See file docstring for [kwarg] options.
 
@@ -1189,12 +1189,18 @@ class Plotter:
                 x_high = self.user_to_axes_x(entry.x_high())
                 y_low = self.user_to_axes_y(entry.y_low())
                 y_high = self.user_to_axes_y(entry.y_high())
+                if x_low == 0.22:
+                    print(occlusions)
                 occlusions.add(x_low, x_high, y_low, y_high)
+                if x_low == 0.22:
+                    print(occlusions)
+                # print(obj.GetName(), x_low, x_high, y_low, y_high)
                 # if draw_opt != 'P' and ('TH1' in obj.ClassName() or 'TProfile' in obj.ClassName()):
                 #     # All other plot options use the full width of the bin, so only 'P' is where
                 #     # we don't check the x_low/x_high
                 #     update_loc(entry.x_low(), entry.y_high())
                 #     update_loc(entry.x_high(), entry.y_high())
+        # print(occlusions)
 
         ### Test ###
         min_pad = None
@@ -1834,6 +1840,12 @@ class Occlusion:
         self.ranges : list[Occlusion.Range] = [] 
         self.points = [] 
 
+    def __str__(self):
+        out = 'Occlusion:'
+        for x in self.ranges:
+            out += f'\n    {x}'
+        return out
+
     def _find(self, r : Occlusion.Range):
         '''
         @returns i_min, i_max
@@ -1852,8 +1864,8 @@ class Occlusion:
         i_min, i_max = self._find(r)
         if i_min == len(self.ranges):
             self.ranges.append(r)
-        elif i_max == 0:
-            self.ranges.insert(0, r)
+        elif i_min == i_max:
+            self.ranges.insert(i_min, r)
         else:
             new_slice = []
             for i in range(i_min, i_max):
