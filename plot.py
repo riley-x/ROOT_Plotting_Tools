@@ -181,8 +181,13 @@ ignore_outliers_y                                       default: 0
     0 to disable
 title_offset_<x/y/z>
     ROOT TGaxis title offset.
+x_bin_labels                                            default: None
+    Specify a list of bin labels for the x axis. Should match the number of x bins. 
+x_labels_option                                         default: None
+    Set a ROOT TAxis.LabelsOption() option. 
+    https://root.cern.ch/doc/master/classTAxis.html#a05dd3c5b4c3a1e32213544e35a33597c
 
-    
+
 LEGEND
 -----------------------------------------------------
 legend                                                  default: 'auto'
@@ -458,8 +463,18 @@ class Plotter:
 
     def _create_frame(self, **kwargs):
         if self.x_range and self.y_range and not self.is_2d:
-            self.frame = ROOT.TH1F('h_frame', '', 1, *self.x_range)
-            self.frame.SetDirectory(0)
+            if labels := kwargs.get('x_bin_labels'):
+                for h in self.objs:
+                    if 'TGraph' not in h.ClassName() and h.GetXaxis().GetNbins() == len(labels):
+                        self.frame = h.Clone()
+                        break
+                else:
+                    self.frame = ROOT.TH1F('h_frame', '', len(labels), *self.x_range)
+                    self.frame.SetDirectory(0)
+
+            else:
+                self.frame = ROOT.TH1F('h_frame', '', 1, *self.x_range)
+                self.frame.SetDirectory(0)
         else: 
             # use objs[0] as the frame to preserve default ROOT behavior 
             # Note Z axis settings MUST be applied on the histogram drawn with 'Z' option, don't clone!
@@ -1603,7 +1618,12 @@ def _apply_common_opts(obj, i, **kwargs):
     if x := kwargs.get('ztitle'): # this needs to be applied to the histogram which was drawn with colz
         obj.GetZaxis().SetTitle(x)
 
-def _apply_frame_opts(obj, **kwargs):
+def _apply_frame_opts(
+        obj, 
+        x_bin_labels : list[str]=None, 
+        x_labels_option : str=None, 
+        **kwargs,
+    ):
     if 'xtitle' in kwargs:
         obj.GetXaxis().SetTitle(kwargs['xtitle'])
     if 'ytitle' in kwargs:
@@ -1618,7 +1638,11 @@ def _apply_frame_opts(obj, **kwargs):
     if x := kwargs.get('zdivs'):
         obj.GetZaxis().SetNdivisions(x, True)
 
-
+    if x_bin_labels is not None:
+        for i,label in enumerate(x_bin_labels):
+            obj.GetXaxis().SetBinLabel(i+1, label)
+    if x_labels_option is not None:
+        obj.GetXaxis().LabelsOption(x_labels_option)
 
 
 ### MISC ###
@@ -1646,7 +1670,7 @@ def _fix_axis_sizing(h, pad,
         h.GetXaxis().SetLabelSize(0)
         h.GetXaxis().SetTitleSize(0)
     else:
-        h.GetXaxis().SetLabelOffset(label_offset_x)
+        h.GetXaxis().SetLabelOffset(label_offset_x / height)
         h.GetXaxis().SetLabelSize(label_size_x / height)
         h.GetXaxis().SetTitleSize(text_size / height)
         h.GetXaxis().SetTitleOffset(title_offset_x)
@@ -1949,15 +1973,15 @@ class RatioPads:
     [Plotter] before drawing the main objects.
 
     Workflow:
-        pads = RatioPads()
 
-        ### Method 1 ###
+        ### Method 1 (object) ###
+        pads = RatioPads()
         plotter1 = pads.make_plotter1(...)
         plotter1.add(...)
         plotter1.draw(...)
         # repeat for plotter2
 
-        ### Method 2 ###
+        ### Method 2 (static) ###
         plotter1 = Plotter(pads.pad1, ..., **RatioPads.default_args1)
         plotter1.add(...)
         plotter1.draw(...)
@@ -2972,16 +2996,23 @@ def reduced_legend_hists(shape, opts=None):
 ###                          HISTOGRAM UTILITIES                           ###
 ##############################################################################
 
-def rebin(h, val=None):
+def rebin(h, val=None, clone=True):
     '''
-    Rebins a histogram [h] with a variety of modes based on [va].
-
+    Rebins a histogram [h] with a variety of modes based on [val].
+    
     @param val
         - If a list, will return a new histogram with the supplied bins.
         - If a positive number, will modify [h] such that each bin has width [val], 
           assuming that [h] has equal width bins.
         - If a negative number, will merge |val| bins together
+    @param clone
+        When True, will always clone [h] first. When False, will use default ROOT
+        behavior: 
+            - When [val] is a list, a new histogram will be created always.
+            - Other modes of [val] will modify [h] in-place.
     '''
+    if clone:
+        h = h.Clone()
     if val is None:
         return h
     elif isinstance(val, float) or isinstance(val, int):
