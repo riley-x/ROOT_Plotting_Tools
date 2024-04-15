@@ -1189,18 +1189,12 @@ class Plotter:
                 x_high = self.user_to_axes_x(entry.x_high())
                 y_low = self.user_to_axes_y(entry.y_low())
                 y_high = self.user_to_axes_y(entry.y_high())
-                if x_low == 0.22:
-                    print(occlusions)
                 occlusions.add(x_low, x_high, y_low, y_high)
-                if x_low == 0.22:
-                    print(occlusions)
-                # print(obj.GetName(), x_low, x_high, y_low, y_high)
                 # if draw_opt != 'P' and ('TH1' in obj.ClassName() or 'TProfile' in obj.ClassName()):
                 #     # All other plot options use the full width of the bin, so only 'P' is where
                 #     # we don't check the x_low/x_high
                 #     update_loc(entry.x_low(), entry.y_high())
                 #     update_loc(entry.x_high(), entry.y_high())
-        # print(occlusions)
 
         ### Test ###
         min_pad = None
