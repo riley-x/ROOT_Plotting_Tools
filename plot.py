@@ -1253,8 +1253,6 @@ class Plotter:
                     # y' = y (1 - pad_top - pad_bot) + pad_bot
                     # Set y' == bottom and solve for pad_top
                     pad_req = 1 - pad_bot - (bottom - pad_bot) / r.y_max
-                    # if pad_req > max_pad:
-                    #     print(f'{left:.2g} {right:.2g} {bottom:.2g} === {r}')
                     max_pad = max(max_pad, pad_req)
         return max_pad
 
@@ -1828,7 +1826,9 @@ class Occlusion:
                 raise RuntimeError('Occlusion.Range.split() How did we get here?')
 
         def overlaps_x(self, x_min, x_max):
-            return (x_min >= self.x_min and x_min < self.x_max) or (x_max > self.x_min and x_max <= self.x_max)
+            return (x_min >= self.x_min and x_min < self.x_max) or \
+                (x_max > self.x_min and x_max <= self.x_max) or \
+                (x_min <= self.x_min and x_max >= self.x_max)
 
     def __init__(self) -> None:
         self.ranges : list[Occlusion.Range] = [] 
