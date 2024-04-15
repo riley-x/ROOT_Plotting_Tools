@@ -55,10 +55,10 @@ def discrete_plot():
     args.setdefault('y_range3', [0, None])
 
     ### Remove bottom ticks ###
-    def frame_callback(frame):
-        frame.GetYaxis().ChangeLabel(1, -1, 0)
-    args['frame_callback'] = frame_callback
-    args['frame_callback2'] = frame_callback
+    def frame_callback(plotter1, plotter2, plotter3):
+        plotter1.frame.GetYaxis().ChangeLabel(1, -1, 0)
+        plotter2.frame.GetYaxis().ChangeLabel(1, -1, 0)
+    args['callback'] = frame_callback
 
     ### Plot ###
     plot.plot_discrete_bins(hists, hists2, hists3, plotter=plot.plot_ratio3, **args)
@@ -88,7 +88,6 @@ def _fractional_uncertainties(hists):
     return hists3
 
 
-
 if __name__ == "__main__":
-    plot.save_transparent = False
+    plot.save_transparent_png = False
     discrete_plot()

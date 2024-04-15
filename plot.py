@@ -2039,17 +2039,16 @@ class RatioPads:
 ##############################################################################
 
 
-def _plot(c, objs, callback=None, **kwargs):
-    plotter = Plotter(c, objs=objs, **kwargs)
-    if callback: 
-        callback(plotter)
-    return plotter
+def _plot(c, objs, **kwargs):
+    return Plotter(c, objs=objs, **kwargs)
 
 
-def plot(objs, canvas_size=(1000,800), canvas_name='c1', **kwargs):
+def plot(objs, canvas_size=(1000,800), canvas_name='c1', callback=None, filename=None, **kwargs):
     c = ROOT.TCanvas(canvas_name, canvas_name, *canvas_size)
     plotter = _plot(c, objs, **kwargs)
-    save_canvas(c, kwargs.get('filename', objs[0].GetName()))
+    if callback: 
+        callback(plotter)
+    save_canvas(c, filename or objs[0].GetName())
 
 
 def _copy_ratio_args(plotter, args, postfix):
@@ -2534,7 +2533,7 @@ def plot_discrete_bins(hists1, hists2=None, hists3=None, plotter=plot, bin_width
             user_callback(*args)
     kwargs['callback'] = callback
     kwargs.setdefault('label_size_x', 0.03) # don't set this in ChangeLabel(), or else the labels get duplicated
-    kwargs.setdefault('label_offset_x', 0.025) 
+    kwargs.setdefault('label_offset_x', 0.01) 
 
     ### Convert objects to TGraphAsymmErrors ###
     def create_graph(obj, i, n):
