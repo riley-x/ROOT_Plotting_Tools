@@ -2118,7 +2118,8 @@ def plot_ratio(objs1, objs2, outlier_arrows=True, hline=None, hline2=None, callb
         hline = hline2
 
     ### Create pads ###
-    pads = RatioPads(**kwargs)
+    bottom_margin = kwargs.pop('bottom_margin', 0.12)
+    pads = RatioPads(bottom_margin=bottom_margin, **kwargs)
 
     ### Draw main histo, get error histos
     plotter1 = pads.make_plotter1(objs=objs1, **kwargs)
