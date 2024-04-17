@@ -584,7 +584,7 @@ class Plotter:
             if y_min is not None: 
                 y_min = np.log10(y_min) if y_min > 0 else None
             if y_max is not None: 
-                if y_max > 0: warning(f'Plotter._pad_y_range() passed a negative y_max={y_max} but plot is in logy mode')
+                if y_max <= 0: warning(f'Plotter._pad_y_range() passed a negative y_max={y_max} but plot is in logy mode')
                 y_max = np.log10(y_max) if y_max > 0 else None
 
         ### First pass padding ###
