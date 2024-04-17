@@ -741,9 +741,11 @@ class Plotter:
                 # changes, so it must be cloned.
 
         ### Styles ###
+        apply_common_root_styles(objs, **kwargs)
+
+        ### Styles ###
         draw_opts = []
         for i,obj in enumerate(objs):
-            _apply_common_opts(obj, i, **kwargs)
             draw_opts.append(_arg(opts, i))
             obj.__rxplot_draw_opt = draw_opts[-1] # this just sets a python attribute for convenience
 
@@ -1165,7 +1167,7 @@ class Plotter:
         ### No auto ###
         if self.is_2d: return
         if not self.has_text(): return
-        if self.data_y_max == self.data_y_min: return
+        # if self.data_y_max == self.data_y_min: return
 
         ### Test textpos list ###
         if self.text_pos == 'auto':
@@ -1437,6 +1439,7 @@ class Plotter:
 
 
 
+
 ##############################################################################
 ###                                 HELPERS                                ###
 ##############################################################################
@@ -1498,7 +1501,6 @@ def _auto_x_range(objs, x_range=(None, None), x_pad=None, x_pad_left=0, x_pad_ri
     if x_range[1] is None: x_max += x_pad_right * diff / data_width
 
     return (x_min, x_max)
-
 
 def _minmax_y(obj, x_range=None, ignore_outliers_y=0, **kwargs):
     '''
@@ -1593,25 +1595,47 @@ def _arg(val, i):
     else:
         return val
 
-def _apply_common_opts(obj, i, **kwargs):
-    if 'linecolor' in kwargs:
-        obj.SetLineColor(_arg(kwargs['linecolor'], i))
-    if 'linestyle' in kwargs:
-        obj.SetLineStyle(_arg(kwargs['linestyle'], i))
-    if 'linewidth' in kwargs:
-        obj.SetLineWidth(_arg(kwargs['linewidth'], i))
+def apply_common_root_styles(
+        objs : list,
+        linecolor='default', 
+        markercolor='default', 
+        **kwargs,
+    ):
+    '''
+    Applies common ROOT styles for TAttLine, TAttMarker, and TAttFill to a list of
+    objects.
 
-    if 'markerstyle' in kwargs:
-        obj.SetMarkerStyle(_arg(kwargs['markerstyle'], i))
-    if 'markercolor' in kwargs:
-        obj.SetMarkerColor(_arg(kwargs['markercolor'], i))
-    if 'markersize' in kwargs:
-        obj.SetMarkerSize(_arg(kwargs['markersize'], i))
+    All of these options can be specified in multiple forms:
+        - None: does nothing, and will keep the parameter already set in the object.
+        - Single value: applied to all objects
+        - List of values: must have length > len(objs), and will be applied elementwise
+        - Function: takes a single input, the index into [objs], and returns the property
+          value
+    '''
+    if linecolor == 'default':
+        linecolor = colors.tableu if len(objs) > 1 else None
+    if markercolor == 'default':
+        markercolor = colors.tableu if len(objs) > 1 else None
+    
+    for i,obj in enumerate(objs):
+        if linecolor is not None:
+            obj.SetLineColor(_arg(linecolor, i))
+        if 'linestyle' in kwargs:
+            obj.SetLineStyle(_arg(kwargs['linestyle'], i))
+        if 'linewidth' in kwargs:
+            obj.SetLineWidth(_arg(kwargs['linewidth'], i))
 
-    if 'fillcolor' in kwargs:
-        obj.SetFillColor(_arg(kwargs['fillcolor'], i))
-    if 'fillstyle' in kwargs:
-        obj.SetFillStyle(_arg(kwargs['fillstyle'], i))
+        if 'markerstyle' in kwargs:
+            obj.SetMarkerStyle(_arg(kwargs['markerstyle'], i))
+        if markercolor is not None:
+            obj.SetMarkerColor(_arg(markercolor, i))
+        if 'markersize' in kwargs:
+            obj.SetMarkerSize(_arg(kwargs['markersize'], i))
+
+        if 'fillcolor' in kwargs:
+            obj.SetFillColor(_arg(kwargs['fillcolor'], i))
+        if 'fillstyle' in kwargs:
+            obj.SetFillStyle(_arg(kwargs['fillstyle'], i))
 
     if x := kwargs.get('ztitle'): # this needs to be applied to the histogram which was drawn with colz
         obj.GetZaxis().SetTitle(x)
@@ -2789,6 +2813,7 @@ def plot_colors():
             boxes.append(b)
 
     c.Print('colormaps.png')
+
 
 
 ##############################################################################
