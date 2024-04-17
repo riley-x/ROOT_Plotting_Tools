@@ -1612,11 +1612,23 @@ def apply_common_root_styles(
         - Function: takes a single input, the index into [objs], and returns the property
           value
     '''
+    ### Auto color black lines with the tableu color map ###
     if linecolor == 'default':
-        linecolor = colors.tableu if len(objs) > 1 else None
+        if len(objs) > 1:
+            linecolor = None
+        else:
+            def linecolor(i): 
+                if objs[i].GetLineColor() == ROOT.kBlack:
+                    return colors.tableu(i)
     if markercolor == 'default':
-        markercolor = colors.tableu if len(objs) > 1 else None
+        if len(objs) > 1:
+            markercolor = None
+        else:
+            def markercolor(i): 
+                if objs[i].GetMarkerColor() == ROOT.kBlack:
+                    return colors.tableu(i)
     
+    ### Apply ###
     for i,obj in enumerate(objs):
         if linecolor is not None:
             obj.SetLineColor(_arg(linecolor, i))
