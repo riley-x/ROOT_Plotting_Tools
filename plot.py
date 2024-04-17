@@ -292,8 +292,8 @@ ROOT.gROOT.SetStyle("ATLAS")
 ROOT.gROOT.ForceStyle()
 ROOT.TGaxis.SetMaxDigits(4) # Number of digis to show on an axis, above which exponential notation is used
 
-file_formats = ['png']
-save_transparent_png = True
+file_formats = ['png', 'pdf']
+save_transparent_png = False
 
 ##############################################################################
 ###                                PLOTTING                                ###
