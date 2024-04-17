@@ -1612,21 +1612,17 @@ def apply_common_root_styles(
         - Function: takes a single input, the index into [objs], and returns the property
           value
     '''
-    ### Auto color black lines with the tableu color map ###
+    ### Auto color when colorless with the tableu color map ###
     if linecolor == 'default':
-        if len(objs) > 1:
+        if len(objs) > 1 and np.all([o.GetLineColor() == ROOT.kBlack for o in objs]):
+            linecolor = colors.tableu
+        else:
             linecolor = None
-        else:
-            def linecolor(i): 
-                if objs[i].GetLineColor() == ROOT.kBlack:
-                    return colors.tableu(i)
     if markercolor == 'default':
-        if len(objs) > 1:
-            markercolor = None
+        if len(objs) > 1 and np.all([o.GetMarkerColor() == ROOT.kBlack for o in objs]):
+            markercolor = colors.tableu
         else:
-            def markercolor(i): 
-                if objs[i].GetMarkerColor() == ROOT.kBlack:
-                    return colors.tableu(i)
+            markercolor = None
     
     ### Apply ###
     for i,obj in enumerate(objs):
