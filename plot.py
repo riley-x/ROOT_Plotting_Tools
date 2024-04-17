@@ -3159,13 +3159,12 @@ def undo_width_scaling(h):
 def normalize(h, mode="integral"):
     '''
     Normalizes a histogram with multiple different modes. This function leaves the
-    original histogram untouched.
+    original histogram untouched. Always includes underflow/overflow bins.
 
     @param mode
-        - "integral": Divides [h] by its integral, including overflow bins
+        - "integral": Divides [h] by its integral.
         - "integral%": As above, but scales by 100.
-        - "abs integral": Divides [h] by the sum of its |bin contents|, including over-
-            flow bins.
+        - "abs integral": Divides [h] by the sum of its |bin contents|.
         - "cumulative": Sets the bin x to (# events <= x / # total events).
         - "cumulativer": Sets the bin x to (# events >= x / # total events).
     @return the normalized histogram.
