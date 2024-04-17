@@ -87,15 +87,19 @@ opts
     specify 'SAME' or 'A', unless you're calling _plot on the same pad more than once. 
     For TH2s, you can also input things like 'TEXT:4.2f' to specify a printf formatter 
     when drawing with 'TEXT'.
-line<color/style/width>
+line<color/style/width>                                 default: 'auto'
     Sets the corresponding TAttLine properties. See the ROOT documentation for input
-    values.
-marker<color/style/size>
+    values. Set to None to do nothing. In the auto mode, linecolor will be set to the
+    colors.tableu colormap, as long as all there are multiple objects and they are all 
+    black. Otherwise, the default is None.
+marker<color/style/size>                                default: 'auto'
     Sets the corresponding TAttMarker properties. See the ROOT documentation for input
-    values.
-fill<color/style>
+    values. Set to None to do nothing. In the auto mode, markercolor will be set to the
+    colors.tableu colormap, as long as all there are multiple objects and they are all 
+    black. Otherwise, the default is None.
+fill<color/style>                                       default: None
     Sets the corresponding TAttFill properties. See the ROOT documentation for input
-    values.
+    values. Set to None to do nothing.
 
 
 TEXT AND FILE NAMES
@@ -577,8 +581,11 @@ class Plotter:
         if self.logy:
             data_min = np.log10(data_min)
             data_max = np.log10(data_max)
-            if y_min is not None: y_min = np.log10(y_min)
-            if y_max is not None: y_max = np.log10(y_max)
+            if y_min is not None: 
+                y_min = np.log10(y_min) if y_min > 0 else None
+            if y_max is not None: 
+                if y_max > 0: warning(f'Plotter._pad_y_range() passed a negative y_max={y_max} but plot is in logy mode')
+                y_max = np.log10(y_max) if y_max > 0 else None
 
         ### First pass padding ###
         pad_bot = self._y_pad_bot if self.auto_y_bot else 0
@@ -1597,8 +1604,8 @@ def _arg(val, i):
 
 def apply_common_root_styles(
         objs : list,
-        linecolor='default', 
-        markercolor='default', 
+        linecolor='auto', 
+        markercolor='auto', 
         **kwargs,
     ):
     '''
@@ -1613,12 +1620,12 @@ def apply_common_root_styles(
           value
     '''
     ### Auto color when colorless with the tableu color map ###
-    if linecolor == 'default':
+    if linecolor == 'auto':
         if len(objs) > 1 and np.all([o.GetLineColor() == ROOT.kBlack for o in objs]):
             linecolor = colors.tableu
         else:
             linecolor = None
-    if markercolor == 'default':
+    if markercolor == 'auto':
         if len(objs) > 1 and np.all([o.GetMarkerColor() == ROOT.kBlack for o in objs]):
             markercolor = colors.tableu
         else:
