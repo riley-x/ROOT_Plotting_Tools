@@ -2844,7 +2844,7 @@ def save_canvas(c, filename):
     type_list = ['cxx', 'jpg', 'png', 'ps', 'pdf']
     for t in type_list:
         if filename.endswith(f'.{t}'):
-            file_type = [t]
+            file_types = [t]
             filename = filename[:-len(t)-1]
             break
     
