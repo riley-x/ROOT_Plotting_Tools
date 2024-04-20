@@ -1606,6 +1606,7 @@ def apply_common_root_styles(
         objs : list,
         linecolor='auto', 
         markercolor='auto', 
+        fillcolor=None,
         **kwargs,
     ):
     '''
@@ -1621,12 +1622,12 @@ def apply_common_root_styles(
     '''
     ### Auto color when colorless with the tableu color map ###
     if linecolor == 'auto':
-        if len(objs) > 1 and np.all([o.GetLineColor() == ROOT.kBlack and o.GetFillColor() == 0 for o in objs]):
+        if len(objs) > 1 and fillcolor is None and np.all([o.GetLineColor() == ROOT.kBlack and o.GetFillColor() == 0 for o in objs]):
             linecolor = colors.tableu
         else:
             linecolor = None
     if markercolor == 'auto':
-        if len(objs) > 1 and np.all([o.GetMarkerColor() == ROOT.kBlack and o.GetFillColor() == 0 for o in objs]):
+        if len(objs) > 1 and fillcolor is None and np.all([o.GetMarkerColor() == ROOT.kBlack and o.GetFillColor() == 0 for o in objs]):
             markercolor = colors.tableu
         else:
             markercolor = None
@@ -1647,8 +1648,8 @@ def apply_common_root_styles(
         if 'markersize' in kwargs:
             obj.SetMarkerSize(_arg(kwargs['markersize'], i))
 
-        if 'fillcolor' in kwargs:
-            obj.SetFillColor(_arg(kwargs['fillcolor'], i))
+        if fillcolor is not None:
+            obj.SetFillColor(_arg(fillcolor, i))
         if 'fillstyle' in kwargs:
             obj.SetFillStyle(_arg(kwargs['fillstyle'], i))
 
