@@ -3131,8 +3131,8 @@ def integral_user(h, user_range=None, use_width=False, return_error=False):
     else:
         y0 =  0 if user_range[0] is None else h.GetXaxis().FindFixBin(user_range[0])
         y1 = -1 if user_range[1] is None else h.GetXaxis().FindFixBin(user_range[1]) - 1
-        if y1 >= 0 and  y1 < y0:
-            raise RuntimeError(f'integral_user() invalid range: {user_range}')
+        if y1 >= 0 and y1 < y0:
+            raise RuntimeError(f'integral_user() invalid range: {user_range}; found bins ({y0},{y1})')
 
     ### Integral ###
     option = 'width' if use_width else ''
