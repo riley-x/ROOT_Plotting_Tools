@@ -3043,6 +3043,11 @@ def reduced_legend_hists(shape, opts=None):
 ###                          HISTOGRAM UTILITIES                           ###
 ##############################################################################
 
+# Null pointer for string arguments. If you just pass a python 0 to the ROOT char*, I
+# think it gets interpreted as '0' or something.
+nullptr_char = ctypes.c_char_p(0)
+
+
 def rebin(h, val=None, clone=True):
     '''
     Rebins a histogram [h] with a variety of modes based on [val].
