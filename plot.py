@@ -2101,7 +2101,7 @@ def _copy_ratio_args(plotter, args, postfix):
         if k[-1] == postfix: out[k[:-1]] = v
         elif k.startswith('x'): out[k] = v
         elif k.endswith('_x'): out[k] = v
-        elif k == 'rightmargin': out[k] = v
+        elif k in ['rightmargin', 'logx']: out[k] = v
     out['x_range'] = plotter.x_range
     return out
 
