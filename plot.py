@@ -1935,14 +1935,17 @@ def user_to_axes_x(pad, frame, x):
     user_width = frame.GetXaxis().GetXmax() - frame.GetXaxis().GetXmin()
     return (x - frame.GetXaxis().GetXmin()) / user_width
 def user_to_axes_y(pad, frame, y):
-    if pad.GetLogy(): 
-        if y <= 0: return 0
-        y = np.log10(y)
-        fmin = np.log10(frame.GetMinimum())
-        fmax = np.log10(frame.GetMaximum())
+    if 'TH2' in frame.ClassName():
+        fmin = frame.GetYaxis().GetXmin()
+        fmax = frame.GetYaxis().GetXmax()
     else:
         fmin = frame.GetMinimum()
         fmax = frame.GetMaximum()
+    if pad.GetLogy(): 
+        if y <= 0: return 0
+        y = np.log10(y)
+        fmin = np.log10(fmin)
+        fmax = np.log10(fmax)
     user_width = fmax - fmin
     return (y - fmin) / user_width
 def user_to_axes(pad, frame, coord):
