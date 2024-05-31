@@ -2409,7 +2409,7 @@ def plot_tiered(
     kwargs.setdefault('legend_opts', 'L')
     if tier_labels is not None: 
         kwargs.setdefault('left_margin', 0.2)
-        kwargs.setdefault('ytitleoffset', 2)
+        kwargs.setdefault('title_offset_y', 2)
     if legend := kwargs.get('legend'):
         if isinstance(legend[0], str):
             kwargs['legend'] = list(legend) + [''] * (n_hists - len(legend))
@@ -2429,7 +2429,7 @@ def plot_tiered(
     if tier_labels is not None:
         for y,label in enumerate(tier_labels):
             h_frame.GetYaxis().SetBinLabel(y + 1, label)
-
+    
     ### Initialize plotter ###
     plotter = Plotter(
         pad=c,
